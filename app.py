@@ -79,6 +79,15 @@ st.markdown(
             margin: 0;
         }
 
+        /* Estilo para deixar a foto local redonda e perfeita */
+        .profile-img-container img {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #DCE3EE;
+        }
+
         .metric-card {
             border-radius: 14px;
             padding: 18px 20px;
@@ -253,15 +262,17 @@ with aba_principal:
     col_img, col_txt, col_date = st.columns([1, 8, 4])
     
     with col_img:
+        st.markdown('<div class="profile-img-container">', unsafe_allow_html=True)
         try:
-            st.image("angelica.png", width=46)
+            st.image("angelica.png")
         except Exception:
-            st.image("https://i.pravatar.cc/150?img=32", width=46)
+            st.image("https://i.pravatar.cc/150?img=32")
+        st.markdown('</div>', unsafe_allow_html=True)
             
     with col_txt:
         st.markdown(
             """
-            <div style="padding-top: 2px;">
+            <div style="padding-top: 4px;">
                 <p class="profile-name">Angelica Alves</p>
                 <p class="profile-role">Gestora SST</p>
             </div>
