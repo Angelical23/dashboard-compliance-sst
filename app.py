@@ -66,18 +66,6 @@ st.markdown(
             margin-bottom: 22px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.03);
         }
-        .profile-block {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-        .profile-block img {
-            width: 46px;
-            height: 46px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #DCE3EE;
-        }
         .profile-name {
             color: #17202A;
             font-size: 16px;
@@ -252,7 +240,7 @@ aba_principal, aba_cadastro = st.tabs(["📊 Dashboard de Compliance", "➕ Cada
 
 
 # ============================================================================
-# ABA 1: DASHBOARD COMPLETO (Com Angelica Alves como Gestora SST)
+# ABA 1: DASHBOARD COMPLETO
 # ============================================================================
 with aba_principal:
     st.markdown(
@@ -260,31 +248,34 @@ with aba_principal:
         unsafe_allow_html=True
     )
 
-    col_sub1, col_sub2 = st.columns([6, 4])
-    with col_sub1:
+    # Bloco do perfil com foto local (angelica.png)
+    st.markdown('<div class="sub-header-container">', unsafe_allow_html=True)
+    col_img, col_txt, col_date = st.columns([1, 8, 4])
+    
+    with col_img:
+        try:
+            st.image("angelica.png", width=46)
+        except Exception:
+            st.image("https://i.pravatar.cc/150?img=32", width=46)
+            
+    with col_txt:
         st.markdown(
             """
-            <div class="sub-header-container" style="border: none; margin-bottom: 0; padding: 4px 0;">
-                <div class="profile-block">
-                    <img src="https://i.pravatar.cc/150?img=32" />
-                    <div>
-                        <p class="profile-name">Angelica Alves</p>
-                        <p class="profile-role">Gestora SST</p>
-                    </div>
-                </div>
+            <div style="padding-top: 2px;">
+                <p class="profile-name">Angelica Alves</p>
+                <p class="profile-role">Gestora SST</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-
-    with col_sub2:
-        st.markdown('<div style="display: flex; justify-content: flex-end;">', unsafe_allow_html=True)
+        
+    with col_date:
         intervalo = st.date_input(
             "Período de análise",
             value=(dt.date(2026, 1, 1), dt.date(2026, 12, 31)),
             label_visibility="collapsed",
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.write("")
 
@@ -517,7 +508,6 @@ with aba_cadastro:
         with f_col3:
             setor = st.selectbox("Setor / Local de Trabalho", SETORES)
         
-        # Campo para inserir link de foto personalizado
         foto_url_input = st.text_input(
             "Link da Foto do Colaborador (Opcional - ex: URL de imagem da web ou deixe em branco)",
             value=""
@@ -544,7 +534,6 @@ with aba_cadastro:
             if nome and cpf:
                 if conn is not None:
                     try:
-                        # Se o usuário preencheu uma foto válida usa ela, senão gera uma padrão aleatória
                         foto_final = foto_url_input.strip() if foto_url_input and foto_url_input.startswith("http") else f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
                         
                         conn.table("colaboradores").insert({
