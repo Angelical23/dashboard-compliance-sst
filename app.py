@@ -47,13 +47,16 @@ st.markdown(
         .main-header-bar {
             background: linear-gradient(90deg, #0B2545 0%, #13315C 100%);
             border-radius: 12px;
-            padding: 16px 24px;
+            padding: 14px 24px;
             color: #FFFFFF;
-            font-size: 20px;
+            font-size: 19px;
             font-weight: 700;
             margin-bottom: 16px;
             box-shadow: 0 4px 14px rgba(11, 37, 69, 0.2);
             letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .sub-header-container {
@@ -148,6 +151,19 @@ st.markdown(
             padding: 16px 18px 4px 18px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
+        
+        /* Ajuste do botão dentro da faixa azul */
+        .stButton button {
+            background-color: #1E3A8A;
+            color: white;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            font-weight: 600;
+        }
+        .stButton button:hover {
+            background-color: #2563EB;
+            border-color: white;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -178,7 +194,7 @@ def mapear_status_grupo(status_bruto: str) -> str:
     return "Regular"
 
 
-@st.cache_data(show_spinner=False, ttl=60)
+@st.cache_data(show_spinner=False, ttl=10)
 def carregar_dados_supabase(_conn):
     try:
         func_resp = _conn.table("colaboradores").select(
@@ -225,11 +241,86 @@ if conn is not None:
 else:
     func_df, doc_df = pd.DataFrame(), pd.DataFrame()
 
-# Cabeçalhos
-st.markdown(
-    '<div class="main-header-bar">GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE</div>',
-    unsafe_allow_html=True
-)
+
+# ----------------------------------------------------------------------------
+# MODAL / DIALOG DE NOVO REGISTRO
+# ----------------------------------------------------------------------------
+@st.dialog("Cadastrar Novo Colaborador e Documentos")
+def modal_novo_registro(conn):
+    st.write("Preencha as informações do novo colaborador:")
+    
+    with st.form("form_novo_colaborador"):
+        nome = st.text_input("Nome Completo")
+        cpf = st.text_input("CPF")
+        setor = st.selectbox("Setor / Local de Trabalho", SETORES)
+        
+        st.markdown("---")
+        st.subheader("Status dos Documentos")
+        status_aso = st.selectbox("ASO", ["Em Dia", "Vencido", "Vence em Breve"])
+        status_ficha_adm = st.selectbox("Ficha Admissão", ["Em Dia", "Vencido", "Vence em Breve"])
+        status_epi = st.selectbox("Ficha de EPI", ["Em Dia", "Vencido", "Vence em Breve"])
+        status_nr06 = st.selectbox("Certificado NR06", ["Em Dia", "Vencido", "Vence em Breve"])
+        
+        enviar = st.form_submit_button("Salvar no Supabase")
+        
+        if enviar:
+            if nome and cpf:
+                try:
+                    # 1. Inserir Colaborador
+                    foto_padrao = f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
+                    res_func = conn.table("colaboradores").insert({
+                        "nome_completo": nome,
+                        "cpf": cpf,
+                        "local_trabalho": setor,
+                        "foto_url": foto_padrao
+                    }).execute()
+                    
+                    # Recuperar o ID do colaborador recém inserido
+                    novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
+                    
+                    # 2. Inserir os 4 documentos correspondentes
+                    docs_para_inserir = [
+                        (1, status_ficha_adm),
+                        (2, status_aso),
+                        (3, status_epi),
+                        (4, status_nr06)
+                    ]
+                    
+                    for tipo_id, status_val in docs_para_inserir:
+                        conn.table("compliance_documentos").insert({
+                            "colaborador_id": novo_id,
+                            "tipo_documento_id": tipo_id,
+                            "status_documento": status_val
+                        }).execute()
+                        
+                    st.success("Colaborador cadastrado com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+            else:
+                st.warning("Por favor, preencha o Nome e o CPF.")
+
+
+# ----------------------------------------------------------------------------
+# CABEÇALHOS E BOTÃO DE NOVO REGISTRO
+# ------------------------------------------------------------
+col_tit, col_btn = st.columns([8, 2])
+
+with col_tit:
+    st.markdown(
+        '<div class="main-header-bar" style="margin-bottom:0;">GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE</div>',
+        unsafe_allow_html=True
+    )
+
+with col_btn:
+    # Botão posicionado alinhado à faixa azul
+    if st.button("➕ Novo Registro", use_container_width=True):
+        if conn is not None:
+            modal_novo_registro(conn)
+        else:
+            st.error("Conexão com o Supabase não disponível.")
+
+st.write("")
 
 col_sub1, col_sub2 = st.columns([6, 4])
 with col_sub1:
@@ -259,7 +350,7 @@ with col_sub2:
 
 st.write("")
 
-# 1. Métricas precisas
+# 1. Métricas
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
