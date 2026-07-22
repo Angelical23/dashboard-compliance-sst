@@ -276,7 +276,7 @@ def gerar_dados_mock():
         "Thiago Batista Freitas", "Renata Azevedo Monteiro",
     ]
 
-    colaboradores = []
+    funcionarios = []
     for i, nome in enumerate(nomes, start=1):
         funcionarios.append(
             {
