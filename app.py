@@ -54,9 +54,6 @@ st.markdown(
             margin-bottom: 16px;
             box-shadow: 0 4px 14px rgba(11, 37, 69, 0.2);
             letter-spacing: 0.3px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
         }
 
         .sub-header-container {
@@ -152,7 +149,6 @@ st.markdown(
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
         
-        /* Ajuste do botão dentro da faixa azul */
         .stButton button {
             background-color: #1E3A8A;
             color: white;
@@ -243,12 +239,10 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL / DIALOG DE NOVO REGISTRO
+# MODAL: CADASTRAR NOVO REGISTRO
 # ----------------------------------------------------------------------------
 @st.dialog("Cadastrar Novo Colaborador e Documentos")
 def modal_novo_registro(conn):
-    st.write("Preencha as informações do novo colaborador:")
-    
     with st.form("form_novo_colaborador"):
         nome = st.text_input("Nome Completo")
         cpf = st.text_input("CPF")
@@ -266,19 +260,16 @@ def modal_novo_registro(conn):
         if enviar:
             if nome and cpf:
                 try:
-                    # 1. Inserir Colaborador
                     foto_padrao = f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
-                    res_func = conn.table("colaboradores").insert({
+                    conn.table("colaboradores").insert({
                         "nome_completo": nome,
                         "cpf": cpf,
                         "local_trabalho": setor,
                         "foto_url": foto_padrao
                     }).execute()
                     
-                    # Recuperar o ID do colaborador recém inserido
                     novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
                     
-                    # 2. Inserir os 4 documentos correspondentes
                     docs_para_inserir = [
                         (1, status_ficha_adm),
                         (2, status_aso),
@@ -294,16 +285,38 @@ def modal_novo_registro(conn):
                         }).execute()
                         
                     st.success("Colaborador cadastrado com sucesso!")
+                    st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
             else:
-                st.warning("Por favor, preencha o Nome e o CPF.")
+                st.warning("Preencha o Nome e o CPF.")
+
+
+# ----------------------------------------------------------------------------
+# MODAL: GERENCIAR / EXCLUIR REGISTRO SELECIONADO
+# ----------------------------------------------------------------------------
+@st.dialog("Gerenciar Registro do Colaborador")
+def modal_gerenciar_colaborador(conn, colaborador):
+    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
+    st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
+    
+    st.markdown("---")
+    st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
+    
+    if st.button("🗑️ Excluir Colaborador Permanentemente", type="primary", use_container_width=True):
+        try:
+            conn.table("colaboradores").delete().eq("id", colaborador["id"]).execute()
+            st.success("Colaborador excluído com sucesso!")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao excluir: {e}")
 
 
 # ----------------------------------------------------------------------------
 # CABEÇALHOS E BOTÃO DE NOVO REGISTRO
-# ------------------------------------------------------------
+# ----------------------------------------------------------------------------
 col_tit, col_btn = st.columns([8, 2])
 
 with col_tit:
@@ -313,12 +326,11 @@ with col_tit:
     )
 
 with col_btn:
-    # Botão posicionado alinhado à faixa azul
     if st.button("➕ Novo Registro", use_container_width=True):
         if conn is not None:
             modal_novo_registro(conn)
         else:
-            st.error("Conexão com o Supabase não disponível.")
+            st.error("Conexão com o Supabase indisponível.")
 
 st.write("")
 
@@ -510,7 +522,7 @@ with graf_dir:
 
 st.write("")
 
-# 3. Tabela Interativa de Visão Geral
+# 3. Tabela Interativa de Visão Geral com Seleção de Gerenciamento
 st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
@@ -523,21 +535,26 @@ if not doc_df.empty and not func_df.empty:
 
     tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
     
-    tabela_exibicao = tabela[["nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
-    tabela_exibicao.columns = ["Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
-    tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
+    tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
+    tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
+
+    # Seleção interativa na tabela do Streamlit
+    coluna_selecao = st.selectbox(
+        "Selecione um colaborador para gerenciar/excluir:",
+        options=tabela_exibicao["ID"].tolist(),
+        format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0]
+    )
+
+    if coluna_selecao:
+        colaborador_selecionado = func_df[func_df["id"] == coluna_selecao].iloc[0]
+        if st.button("⚙️ Gerenciar / Excluir Colaborador Selecionado"):
+            modal_gerenciar_colaborador(conn, colaborador_selecionado)
 
     st.dataframe(
-        tabela_exibicao,
+        tabela_exibicao.drop(columns=["ID"]),
         use_container_width=True,
         hide_index=True,
-        height=420,
-        column_config={
-            "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
-            "CPF": st.column_config.TextColumn("CPF", width="small"),
-            "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
-            "Ações": st.column_config.TextColumn("Ações", width="small"),
-        }
+        height=380,
     )
 else:
     st.warning("⚠️ Nenhum registro encontrado.")
