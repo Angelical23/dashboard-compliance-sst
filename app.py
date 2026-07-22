@@ -148,61 +148,6 @@ st.markdown(
             padding: 16px 18px 4px 18px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
-
-        table.custom-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13.5px;
-            font-family: "Source Sans Pro", sans-serif;
-        }
-        table.custom-table thead th {
-            background: #13315C;
-            color: #FFFFFF;
-            padding: 10px 8px;
-            text-align: left;
-            font-weight: 600;
-            position: sticky;
-            top: 0;
-        }
-        table.custom-table tbody tr {
-            border-bottom: 1px solid #EEF0F3;
-        }
-        table.custom-table tbody tr:hover {
-            background: #F6F9FC;
-        }
-        table.custom-table td {
-            padding: 8px 8px;
-            vertical-align: middle;
-            color: #2A2E34;
-        }
-        .emp-cell {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            white-space: nowrap;
-        }
-        .emp-cell img {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-        .doc-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 4px 9px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-        .doc-em-dia   { background: #DFF5E6; color: #1E7B45; }
-        .doc-vencendo { background: #FCF0CE; color: #9A6B00; }
-        .doc-vencido  { background: #FBE0DE; color: #B3261E; }
-        .actions-cell { white-space: nowrap; font-size: 15px; }
-        .actions-cell span { margin-right: 10px; cursor: pointer; opacity: 0.85; }
-        .actions-cell span:hover { opacity: 1; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -544,7 +489,7 @@ with graf_dir:
 
 st.write("")
 
-# 3. Tabela Principal
+# 3. Tabela Principal (Usando tabela nativa do Streamlit para evitar erros de HTML)
 st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
@@ -556,73 +501,21 @@ if not doc_df.empty and not func_df.empty:
     ).reindex(columns=TIPOS_DOCUMENTO)
 
     tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
-else:
-    tabela = pd.DataFrame(columns=["id", "nome_completo", "cpf", "local_trabalho", "foto_url"])
-
-
-def render_pill(status: str) -> str:
-    if pd.isna(status):
-        return '<span class="doc-pill doc-vencido">🛑 N/D</span>'
-    if status == "Em Dia":
-        return '<span class="doc-pill doc-em-dia">✔️ Em Dia</span>'
-    if status == "Vencido":
-        return '<span class="doc-pill doc-vencido">🛑 Vencido</span>'
-    return f'<span class="doc-pill doc-vencendo">⚠️ {status}</span>'
-
-
-linhas_html = []
-for _, row in tabela.iterrows():
-    linhas_html.append(
-        f"""
-        <tr>
-            <td>
-                <div class="emp-cell">
-                    <img src="{row.get('foto_url', 'https://i.pravatar.cc/150')}" />
-                    <span>{row.get('nome_completo', '')}</span>
-                </div>
-            </td>
-            <td>{row.get('cpf', '')}</td>
-            <td>{row.get('local_trabalho', '')}</td>
-            <td>{render_pill(row.get('Ficha Admissão'))}</td>
-            <td>{render_pill(row.get('ASO'))}</td>
-            <td>{render_pill(row.get('Ficha de EPI'))}</td>
-            <td>{render_pill(row.get('Certificado NR06'))}</td>
-            <td class="actions-cell">
-                <span title="Visualizar">👁️</span>
-                <span title="Editar">✏️</span>
-                <span title="Notificar">🔔</span>
-            </td>
-        </tr>
-        """
+    
+    # Renomeando colunas para exibição limpa
+    tabela_exibicao = tabela[["nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
+    tabela_exibicao.columns = ["Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
+    
+    st.dataframe(
+        tabela_exibicao,
+        use_container_width=True,
+        hide_index=True,
+        height=400
     )
-
-# CORREÇÃO CRUCIAL: A estrutura completa da tabela deve estar em uma única string unificada para o st.markdown com unsafe_allow_html=True
-tabela_html = f"""
-<div style="max-height: 560px; overflow-y: auto; border: 1px solid #ECECEC; border-radius: 14px;">
-<table class="custom-table">
-    <thead>
-        <tr>
-            <th>Nome Completo</th>
-            <th>CPF</th>
-            <th>Local de Trabalho</th>
-            <th>Ficha de Admissão</th>
-            <th>ASO</th>
-            <th>Ficha de EPI</th>
-            <th>Certificado NR06</th>
-            <th>Ações</th>
-        </tr>
-    </thead>
-    <tbody>
-        {''.join(linhas_html)}
-    </tbody>
-</table>
-</div>
-"""
-
-# O parâmetro unsafe_allow_html=True garante que o Streamlit renderize o HTML como componentes visuais e não como texto puro
-st.markdown(tabela_html, unsafe_allow_html=True)
+else:
+    st.info("Nenhum registro encontrado para exibição.")
 
 st.caption(
-    f"Exibindo {len(tabela)} colaboradores · Última atualização: "
+    f"Exibindo colaboradores · Última atualização: "
     f"{dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"
 )
