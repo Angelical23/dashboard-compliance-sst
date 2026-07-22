@@ -239,79 +239,10 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL: CADASTRAR NOVO REGISTRO
+# ESTADO DE CONTROLE PARA ABRIR O FORMULÁRIO DE CADASTRO
 # ----------------------------------------------------------------------------
-@st.dialog("Cadastrar Novo Colaborador e Documentos")
-def modal_novo_registro(conn):
-    with st.form("form_novo_colaborador"):
-        nome = st.text_input("Nome Completo")
-        cpf = st.text_input("CPF")
-        setor = st.selectbox("Setor / Local de Trabalho", SETORES)
-        
-        st.markdown("---")
-        st.subheader("Status dos Documentos")
-        status_aso = st.selectbox("ASO", ["Em Dia", "Vencido", "Vence em Breve"])
-        status_ficha_adm = st.selectbox("Ficha Admissão", ["Em Dia", "Vencido", "Vence em Breve"])
-        status_epi = st.selectbox("Ficha de EPI", ["Em Dia", "Vencido", "Vence em Breve"])
-        status_nr06 = st.selectbox("Certificado NR06", ["Em Dia", "Vencido", "Vence em Breve"])
-        
-        enviar = st.form_submit_button("Salvar no Supabase")
-        
-        if enviar:
-            if nome and cpf:
-                try:
-                    foto_padrao = f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
-                    conn.table("colaboradores").insert({
-                        "nome_completo": nome,
-                        "cpf": cpf,
-                        "local_trabalho": setor,
-                        "foto_url": foto_padrao
-                    }).execute()
-                    
-                    novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
-                    
-                    docs_para_inserir = [
-                        (1, status_ficha_adm),
-                        (2, status_aso),
-                        (3, status_epi),
-                        (4, status_nr06)
-                    ]
-                    
-                    for tipo_id, status_val in docs_para_inserir:
-                        conn.table("compliance_documentos").insert({
-                            "colaborador_id": novo_id,
-                            "tipo_documento_id": tipo_id,
-                            "status_documento": status_val
-                        }).execute()
-                        
-                    st.success("Colaborador cadastrado com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
-            else:
-                st.warning("Preencha o Nome e o CPF.")
-
-
-# ----------------------------------------------------------------------------
-# MODAL: GERENCIAR / EXCLUIR REGISTRO SELECIONADO
-# ----------------------------------------------------------------------------
-@st.dialog("Gerenciar Registro do Colaborador")
-def modal_gerenciar_colaborador(conn, colaborador):
-    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
-    st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
-    
-    st.markdown("---")
-    st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
-    
-    if st.button("🗑️ Excluir Colaborador Permanentemente", type="primary", use_container_width=True):
-        try:
-            conn.table("colaboradores").delete().eq("id", colaborador["id"]).execute()
-            st.success("Colaborador excluído com sucesso!")
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao excluir: {e}")
+if "mostrar_form_cadastro" not in st.session_state:
+    st.session_state.mostrar_form_cadastro = False
 
 
 # ----------------------------------------------------------------------------
@@ -327,10 +258,72 @@ with col_tit:
 
 with col_btn:
     if st.button("➕ Novo Registro", use_container_width=True):
-        if conn is not None:
-            modal_novo_registro(conn)
-        else:
-            st.error("Conexão com o Supabase indisponível.")
+        st.session_state.mostrar_form_cadastro = not st.session_state.mostrar_form_cadastro
+
+# Formulário expansível na tela quando o botão é acionado
+if st.session_state.mostrar_form_cadastro:
+    with st.container():
+        st.info("📝 Preencha os campos abaixo para cadastrar um novo colaborador:")
+        with st.form("form_novo_colaborador_inline", clear_on_submit=True):
+            f_col1, f_col2, f_col3 = st.columns(3)
+            with f_col1:
+                nome = st.text_input("Nome Completo")
+            with f_col2:
+                cpf = st.text_input("CPF")
+            with f_col3:
+                setor = st.selectbox("Setor / Local de Trabalho", SETORES)
+            
+            st.markdown("**Status Inicial dos Documentos:**")
+            d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+            with d_col1:
+                status_aso = st.selectbox("ASO", ["Em Dia", "Vencido", "Vence em Breve"])
+            with d_col2:
+                status_ficha_adm = st.selectbox("Ficha Admissão", ["Em Dia", "Vencido", "Vence em Breve"])
+            with d_col3:
+                status_epi = st.selectbox("Ficha de EPI", ["Em Dia", "Vencido", "Vence em Breve"])
+            with d_col4:
+                status_nr06 = st.selectbox("Certificado NR06", ["Em Dia", "Vencido", "Vence em Breve"])
+            
+            enviar = st.form_submit_button("Salvar Novo Colaborador no Supabase", use_container_width=True)
+            
+            if enviar:
+                if nome and cpf:
+                    if conn is not None:
+                        try:
+                            foto_padrao = f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
+                            conn.table("colaboradores").insert({
+                                "nome_completo": nome,
+                                "cpf": cpf,
+                                "local_trabalho": setor,
+                                "foto_url": foto_padrao
+                            }).execute()
+                            
+                            novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
+                            
+                            docs_para_inserir = [
+                                (1, status_ficha_adm),
+                                (2, status_aso),
+                                (3, status_epi),
+                                (4, status_nr06)
+                            ]
+                            
+                            for tipo_id, status_val in docs_para_inserir:
+                                conn.table("compliance_documentos").insert({
+                                    "colaborador_id": novo_id,
+                                    "tipo_documento_id": tipo_id,
+                                    "status_documento": status_val
+                                }).execute()
+                                
+                            st.success("Colaborador cadastrado com sucesso!")
+                            st.session_state.mostrar_form_cadastro = False
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no banco: {e}")
+                    else:
+                        st.error("Conexão com o Supabase indisponível.")
+                else:
+                    st.warning("Por favor, preencha pelo menos o Nome e o CPF.")
 
 st.write("")
 
@@ -522,7 +515,24 @@ with graf_dir:
 
 st.write("")
 
-# 3. Tabela Interativa de Visão Geral com Seleção de Gerenciamento
+# MODAL / GERENCIAR REGISTRO SELECIONADO
+@st.dialog("Gerenciar Registro do Colaborador")
+def modal_gerenciar_colaborador(conn, colaborador):
+    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
+    st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
+    st.markdown("---")
+    st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
+    
+    if st.button("🗑️ Excluir Colaborador Permanentemente", type="primary", use_container_width=True):
+        try:
+            conn.table("colaboradores").delete().eq("id", colaborador["id"]).execute()
+            st.success("Colaborador excluído com sucesso!")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao excluir: {e}")
+
+# 3. Tabela Interativa de Visão Geral
 st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
@@ -537,24 +547,33 @@ if not doc_df.empty and not func_df.empty:
     
     tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
     tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
+    tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
 
-    # Seleção interativa na tabela do Streamlit
-    coluna_selecao = st.selectbox(
-        "Selecione um colaborador para gerenciar/excluir:",
-        options=tabela_exibicao["ID"].tolist(),
-        format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0]
-    )
-
-    if coluna_selecao:
-        colaborador_selecionado = func_df[func_df["id"] == coluna_selecao].iloc[0]
-        if st.button("⚙️ Gerenciar / Excluir Colaborador Selecionado"):
-            modal_gerenciar_colaborador(conn, colaborador_selecionado)
+    col_sel, col_del = st.columns([6, 2])
+    with col_sel:
+        coluna_selecao = st.selectbox(
+            "Selecione um colaborador para gerenciar/excluir:",
+            options=tabela_exibicao["ID"].tolist(),
+            format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0],
+            label_visibility="collapsed"
+        )
+    with col_del:
+        if st.button("⚙️ Gerenciar Selecionado", use_container_width=True):
+            if coluna_selecao:
+                colaborador_selecionado = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                modal_gerenciar_colaborador(conn, colaborador_selecionado)
 
     st.dataframe(
         tabela_exibicao.drop(columns=["ID"]),
         use_container_width=True,
         hide_index=True,
         height=380,
+        column_config={
+            "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
+            "CPF": st.column_config.TextColumn("CPF", width="small"),
+            "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
+            "Ações": st.column_config.TextColumn("Ações", width="small"),
+        }
     )
 else:
     st.warning("⚠️ Nenhum registro encontrado.")
