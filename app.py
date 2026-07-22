@@ -169,82 +169,24 @@ SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 def classificar_status(data_validade: dt.date, hoje: dt.date) -> str:
     if pd.isna(data_validade):
-        return "Vencido"
+        return "🛑 Vencido"
     dias = (data_validade - hoje).days
     if dias < 0:
-        return "Vencido"
+        return "🛑 Vencido"
     if dias <= 30:
-        return f"Vence em {dias} dias" if dias > 0 else "Vence em 0 dias"
-    return "Em Dia"
+        return f"⚠️ Vence em {dias} dias" if dias > 0 else "⚠️ Vence hoje"
+    return "✔️ Em Dia"
 
 
 def status_grupo(status: str) -> str:
-    if status == "Em Dia":
+    if "Em Dia" in status:
         return "Regular"
-    if status == "Vencido":
+    if "Vencido" in status:
         return "Vencido"
     return "Vence em Breve"
 
 
-@st.cache_data(show_spinner=False, ttl=300)
-def gerar_dados_mock():
-    import random
-
-    random.seed(42)
-    hoje = dt.date.today()
-
-    nomes = [
-        "André Martins", "Beatriz Nogueira", "Bruno Castro", "Camila Rodrigues",
-        "Carlia Olvera", "Carlos Oliveira", "Diego Cavalcante", "Felipe Teixeira",
-        "Fernanda Costa", "Jobs Almeida", "Juliana Ferreira", "Larissa Vieira",
-        "Lucas Almeida 4", "Lucas Almeida 5", "Lucas Almeida 8", "Mariana Costa",
-        "Patrícia Gomes", "Pedro Santos", "Rafael Cardoso", "Ricardo Nunes"
-    ]
-
-    funcionarios = []
-    for i, nome in enumerate(nomes, start=1):
-        funcionarios.append(
-            {
-                "id": i,
-                "nome_completo": nome,
-                "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
-                "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
-                "local_trabalho": random.choice(SETORES),
-            }
-        )
-    func_df = pd.DataFrame(funcionarios)
-
-    documentos = []
-    doc_id = 1
-    pesos = [0.83, 0.10, 0.07]
-    tipo_map = {tipo: idx for idx, tipo in enumerate(TIPOS_DOCUMENTO, start=1)}
-
-    for f in funcionarios:
-        for tipo in TIPOS_DOCUMENTO:
-            r = random.random()
-            if r < pesos[0]:
-                validade = hoje + dt.timedelta(days=random.randint(60, 400))
-            elif r < pesos[0] + pesos[1]:
-                validade = hoje + dt.timedelta(days=random.randint(1, 30))
-            else:
-                validade = hoje - dt.timedelta(days=random.randint(1, 120))
-
-            documentos.append(
-                {
-                    "id": doc_id,
-                    "colaborador_id": f["id"],
-                    "tipo_documento_id": tipo_map[tipo],
-                    "tipo_documento": tipo,
-                    "data_vencimento": validade,
-                }
-            )
-            doc_id += 1
-
-    doc_df = pd.DataFrame(documentos)
-    return func_df, doc_df
-
-
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(show_spinner=False, ttl=60)
 def carregar_dados_supabase(_conn):
     try:
         func_resp = _conn.table("colaboradores").select(
@@ -267,28 +209,23 @@ def carregar_dados_supabase(_conn):
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         doc_df["data_vencimento"] = pd.to_datetime(doc_df["data_vencimento"]).dt.date
         return func_df, doc_df
-    except Exception:
+    except Exception as e:
+        st.error(f"Erro ao conectar com o Supabase: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 
-def carregar_base():
-    conn = get_connection()
-    if conn is not None:
-        func_df, doc_df = carregar_dados_supabase(conn)
-        if not func_df.empty and not doc_df.empty:
-            return (func_df, doc_df), True
-    
-    return gerar_dados_mock(), False
-
-
-(func_df, doc_df), usando_supabase = carregar_base()
+conn = get_connection()
+if conn is not None:
+    func_df, doc_df = carregar_dados_supabase(conn)
+else:
+    func_df, doc_df = pd.DataFrame(), pd.DataFrame()
 
 hoje = dt.date.today()
 if not doc_df.empty and "data_vencimento" in doc_df.columns:
     doc_df["status_detalhado"] = doc_df["data_vencimento"].apply(lambda d: classificar_status(d, hoje))
     doc_df["status_grupo"] = doc_df["status_detalhado"].apply(status_grupo)
 else:
-    doc_df["status_detalhado"] = "Em Dia"
+    doc_df["status_detalhado"] = "✔️ Em Dia"
     doc_df["status_grupo"] = "Regular"
 
 
@@ -324,21 +261,18 @@ with col_sub2:
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-if not usando_supabase:
-    st.caption("⚠️ Modo demonstração: exibindo dados simulados (tabelas do Supabase vazias ou não configuradas).")
-
 st.write("")
 
-# 1. Métricas
+# 1. Métricas Reais
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
 if not doc_df.empty and "colaborador_id" in doc_df.columns:
     status_por_func = (
         doc_df.groupby("colaborador_id")["status_detalhado"]
-        .apply(lambda s: "Em Dia" if (s == "Em Dia").all() else "Pendente")
+        .apply(lambda s: "Regular" if all("Em Dia" in x for x in s) else "Pendente")
     )
-    colaboradores_em_dia = int((status_por_func == "Em Dia").sum())
+    colaboradores_em_dia = int((status_por_func == "Regular").sum())
 else:
     colaboradores_em_dia = 0
 
@@ -489,7 +423,7 @@ with graf_dir:
 
 st.write("")
 
-# 3. Tabela Principal (Usando tabela nativa do Streamlit para evitar erros de HTML)
+# 3. Tabela Interativa de Visão Geral
 st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
@@ -502,20 +436,29 @@ if not doc_df.empty and not func_df.empty:
 
     tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
     
-    # Renomeando colunas para exibição limpa
     tabela_exibicao = tabela[["nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
     tabela_exibicao.columns = ["Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
     
+    # Adicionando coluna de Ações interativas simuladas para dar o aspecto da imagem de referência
+    tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
+
+    # Exibindo com estilo moderno e interativo do Streamlit
     st.dataframe(
         tabela_exibicao,
         use_container_width=True,
         hide_index=True,
-        height=400
+        height=420,
+        column_config={
+            "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
+            "CPF": st.column_config.TextColumn("CPF", width="small"),
+            "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
+            "Ações": st.column_config.TextColumn("Ações", width="small"),
+        }
     )
 else:
-    st.info("Nenhum registro encontrado para exibição.")
+    st.info("Nenhum registro encontrado no Supabase. Certifique-se de que inseriu os dados nas tabelas do banco.")
 
 st.caption(
-    f"Exibindo colaboradores · Última atualização: "
+    f"Exibindo dados reais do Supabase · Última atualização: "
     f"{dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"
 )
