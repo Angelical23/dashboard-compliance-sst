@@ -210,7 +210,6 @@ def carregar_dados_supabase(_conn):
         doc_df["data_vencimento"] = pd.to_datetime(doc_df["data_vencimento"]).dt.date
         return func_df, doc_df
     except Exception as e:
-        st.error(f"Erro ao conectar com o Supabase: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 
@@ -263,7 +262,7 @@ with col_sub2:
 
 st.write("")
 
-# 1. Métricas Reais
+# 1. Métricas
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
@@ -438,11 +437,8 @@ if not doc_df.empty and not func_df.empty:
     
     tabela_exibicao = tabela[["nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
     tabela_exibicao.columns = ["Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
-    
-    # Adicionando coluna de Ações interativas simuladas para dar o aspecto da imagem de referência
     tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
 
-    # Exibindo com estilo moderno e interativo do Streamlit
     st.dataframe(
         tabela_exibicao,
         use_container_width=True,
@@ -456,7 +452,7 @@ if not doc_df.empty and not func_df.empty:
         }
     )
 else:
-    st.info("Nenhum registro encontrado no Supabase. Certifique-se de que inseriu os dados nas tabelas do banco.")
+    st.warning("⚠️ Atenção: Nenhuma linha foi retornada do Supabase. Verifique se as tabelas contêm registros inseridos e se o comando para desativar o RLS (segurança de leitura) foi executado no SQL Editor do Supabase.")
 
 st.caption(
     f"Exibindo dados reais do Supabase · Última atualização: "
