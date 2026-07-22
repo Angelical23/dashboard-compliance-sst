@@ -168,15 +168,15 @@ SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
 def mapear_status_grupo(status_bruto: str) -> str:
-    """Mapeia o texto exato do banco para as categorias dos gráficos."""
+    """Padroniza rigorosamente a categoria do status."""
     if not isinstance(status_bruto, str):
-        return "Vencido"
-    s = status_bruto.lower()
-    if "dia" in s or "regular" in s:
         return "Regular"
+    s = status_bruto.strip().lower()
     if "vencido" in s or "🛑" in s:
         return "Vencido"
-    return "Vence em Breve"
+    elif "vence" in s or "⚠️" in s:
+        return "Vence em Breve"
+    return "Regular"
 
 
 @st.cache_data(show_spinner=False, ttl=60)
@@ -201,17 +201,16 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        # Formata o status visual com ícones idênticos aos da tabela
         def formatar_status_visual(val):
             if not isinstance(val, str):
-                return "Em Dia"
-            v = val.strip().lower()
-            if "dia" in v:
                 return "✔️ Em Dia"
-            elif "vencido" in v:
+            v = val.strip()
+            if "Em Dia" in v or "dia" in v.lower():
+                return "✔️ Em Dia"
+            elif "Vencido" in v or "vencido" in v.lower():
                 return "🛑 Vencido"
             else:
-                return f"⚠️ {val}"
+                return f"⚠️ {v}"
 
         doc_df["status_detalhado"] = doc_df["status_documento"].apply(formatar_status_visual)
         doc_df["status_grupo"] = doc_df["status_documento"].apply(mapear_status_grupo)
@@ -261,7 +260,7 @@ with col_sub2:
 
 st.write("")
 
-# 1. Métricas sincronizadas exatamente com o banco
+# 1. Métricas calculadas rigorosamente sobre os grupos reais
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
@@ -275,8 +274,11 @@ else:
     colaboradores_em_dia = 0
 
 pct_em_dia = round(100 * colaboradores_em_dia / total_funcionarios) if total_funcionarios else 0
+
+# Contagem exata baseada estritamente no grupo categorizado
 qtd_vencendo = int((doc_df["status_grupo"] == "Vence em Breve").sum()) if not doc_df.empty else 0
 pct_vencendo = round(100 * qtd_vencendo / total_documentos) if total_documentos else 0
+
 qtd_vencido = int((doc_df["status_grupo"] == "Vencido").sum()) if not doc_df.empty else 0
 pct_vencido = round(100 * qtd_vencido / total_documentos) if total_documentos else 0
 
