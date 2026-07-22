@@ -242,38 +242,100 @@ def status_grupo(status: str) -> str:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
+def gerar_dados_mock():
+    import random
+
+    random.seed(42)
+    hoje = dt.date.today()
+
+    nomes = [
+        "Carlos Oliveira", "Fernanda Costa", "Pedro Santos", "Lucas Almeida",
+        "Lucas Almeida", "Jobs Almeida", "Carlia Olvera", "Lucas Almeida",
+        "Mariana Costa", "Ricardo Nunes", "Juliana Ferreira", "André Martins",
+        "Patrícia Gomes", "Bruno Castro", "Camila Rodrigues", "Felipe Teixeira",
+        "Larissa Vieira", "Rafael Cardoso", "Beatriz Nogueira", "Diego Cavalcante"
+    ]
+
+    funcionarios = []
+    for i, nome in enumerate(nomes, start=1):
+        funcionarios.append(
+            {
+                "id": i,
+                "nome_completo": f"{nome} {i if nomes.count(nome) > 1 else ''}".strip(),
+                "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
+                "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
+                "local_trabalho": random.choice(SETORES),
+            }
+        )
+    func_df = pd.DataFrame(funcionarios)
+
+    documentos = []
+    doc_id = 1
+    pesos = [0.83, 0.10, 0.07]
+    tipo_map = {tipo: idx for idx, tipo in enumerate(TIPOS_DOCUMENTO, start=1)}
+
+    for f in funcionarios:
+        for tipo in TIPOS_DOCUMENTO:
+            r = random.random()
+            if r < pesos[0]:
+                validade = hoje + dt.timedelta(days=random.randint(60, 400))
+            elif r < pesos[0] + pesos[1]:
+                validade = hoje + dt.timedelta(days=random.randint(1, 30))
+            else:
+                validade = hoje - dt.timedelta(days=random.randint(1, 120))
+
+            documentos.append(
+                {
+                    "id": doc_id,
+                    "colaborador_id": f["id"],
+                    "tipo_documento_id": tipo_map[tipo],
+                    "tipo_documento": tipo,
+                    "data_vencimento": validade,
+                }
+            )
+            doc_id += 1
+
+    doc_df = pd.DataFrame(documentos)
+    return func_df, doc_df
+
+
+@st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_supabase(_conn):
-    func_resp = _conn.table("colaboradores").select(
-        "id, nome_completo, cpf, foto_url, local_trabalho"
-    ).execute()
-    
-    tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
-    tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
+    try:
+        func_resp = _conn.table("colaboradores").select(
+            "id, nome_completo, cpf, foto_url, local_trabalho"
+        ).execute()
+        
+        tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
+        tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
-    doc_resp = _conn.table("compliance_documentos").select(
-        "id, colaborador_id, tipo_documento_id, data_vencimento"
-    ).execute()
+        doc_resp = _conn.table("compliance_documentos").select(
+            "id, colaborador_id, tipo_documento_id, data_vencimento"
+        ).execute()
 
-    func_df = pd.DataFrame(func_resp.data)
-    doc_df = pd.DataFrame(doc_resp.data)
-    
-    if not doc_df.empty:
+        func_df = pd.DataFrame(func_resp.data)
+        doc_df = pd.DataFrame(doc_resp.data)
+        
+        # Se vier vazio do Supabase, retorna vazio para acionar o mock de segurança
+        if func_df.empty or doc_df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         doc_df["data_vencimento"] = pd.to_datetime(doc_df["data_vencimento"]).dt.date
-    else:
-        doc_df = pd.DataFrame(columns=["id", "colaborador_id", "tipo_documento_id", "tipo_documento", "data_vencimento"])
-
-    return func_df, doc_df
+        return func_df, doc_df
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
 
 
 def carregar_base():
     conn = get_connection()
     if conn is not None:
-        try:
-            return carregar_dados_supabase(conn), True
-        except Exception as e:
-            st.warning(f"Erro ao ler do Supabase: {e}")
-    return pd.DataFrame(), pd.DataFrame()
+        func_df, doc_df = carregar_dados_supabase(conn)
+        if not func_df.empty and not doc_df.empty:
+            return (func_df, doc_df), True
+    
+    # Fallback automático para dados simulados se o banco estiver vazio ou falhar
+    return gerar_dados_mock(), False
 
 
 (func_df, doc_df), usando_supabase = carregar_base()
@@ -318,6 +380,9 @@ with col_sub2:
         label_visibility="collapsed",
     )
     st.markdown('</div>', unsafe_allow_html=True)
+
+if not usando_supabase:
+    st.caption("⚠️ Modo demonstração: exibindo dados simulados (tabelas do Supabase vazias ou não configuradas).")
 
 st.write("")
 
