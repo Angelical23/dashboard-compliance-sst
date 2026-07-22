@@ -1,4 +1,5 @@
 streamlit>=1.35
 pandas>=2.0
 plotly>=5.20
+supabase>=2.0.0
 st-supabase-connection>=1.1
