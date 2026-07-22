@@ -168,7 +168,6 @@ SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
 def mapear_status_grupo(status_bruto: str) -> str:
-    """Padroniza rigorosamente a categoria do status."""
     if not isinstance(status_bruto, str):
         return "Regular"
     s = status_bruto.strip().lower()
@@ -204,19 +203,19 @@ def carregar_dados_supabase(_conn):
         def formatar_status_visual(val):
             if not isinstance(val, str):
                 return "✔️ Em Dia"
-            v = val.strip()
-            if "Em Dia" in v or "dia" in v.lower():
+            v = val.strip().lower()
+            if "dia" in v:
                 return "✔️ Em Dia"
-            elif "Vencido" in v or "vencido" in v.lower():
+            elif "vencido" in v:
                 return "🛑 Vencido"
             else:
-                return f"⚠️ {v}"
+                return f"⚠️ {val}"
 
         doc_df["status_detalhado"] = doc_df["status_documento"].apply(formatar_status_visual)
         doc_df["status_grupo"] = doc_df["status_documento"].apply(mapear_status_grupo)
         
         return func_df, doc_df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
 
@@ -260,7 +259,7 @@ with col_sub2:
 
 st.write("")
 
-# 1. Métricas calculadas rigorosamente sobre os grupos reais
+# 1. Métricas precisas
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
@@ -274,11 +273,8 @@ else:
     colaboradores_em_dia = 0
 
 pct_em_dia = round(100 * colaboradores_em_dia / total_funcionarios) if total_funcionarios else 0
-
-# Contagem exata baseada estritamente no grupo categorizado
 qtd_vencendo = int((doc_df["status_grupo"] == "Vence em Breve").sum()) if not doc_df.empty else 0
 pct_vencendo = round(100 * qtd_vencendo / total_documentos) if total_documentos else 0
-
 qtd_vencido = int((doc_df["status_grupo"] == "Vencido").sum()) if not doc_df.empty else 0
 pct_vencido = round(100 * qtd_vencido / total_documentos) if total_documentos else 0
 
