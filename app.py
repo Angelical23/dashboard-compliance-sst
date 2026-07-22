@@ -249,11 +249,11 @@ def gerar_dados_mock():
     hoje = dt.date.today()
 
     nomes = [
-        "Carlos Oliveira", "Fernanda Costa", "Pedro Santos", "Lucas Almeida",
-        "Lucas Almeida", "Jobs Almeida", "Carlia Olvera", "Lucas Almeida",
-        "Mariana Costa", "Ricardo Nunes", "Juliana Ferreira", "André Martins",
-        "Patrícia Gomes", "Bruno Castro", "Camila Rodrigues", "Felipe Teixeira",
-        "Larissa Vieira", "Rafael Cardoso", "Beatriz Nogueira", "Diego Cavalcante"
+        "André Martins", "Beatriz Nogueira", "Bruno Castro", "Camila Rodrigues",
+        "Carlia Olvera", "Carlos Oliveira", "Diego Cavalcante", "Felipe Teixeira",
+        "Fernanda Costa", "Jobs Almeida", "Juliana Ferreira", "Larissa Vieira",
+        "Lucas Almeida 4", "Lucas Almeida 5", "Lucas Almeida 8", "Mariana Costa",
+        "Patrícia Gomes", "Pedro Santos", "Rafael Cardoso", "Ricardo Nunes"
     ]
 
     funcionarios = []
@@ -261,7 +261,7 @@ def gerar_dados_mock():
         funcionarios.append(
             {
                 "id": i,
-                "nome_completo": f"{nome} {i if nomes.count(nome) > 1 else ''}".strip(),
+                "nome_completo": nome,
                 "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
                 "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
                 "local_trabalho": random.choice(SETORES),
@@ -316,7 +316,6 @@ def carregar_dados_supabase(_conn):
         func_df = pd.DataFrame(func_resp.data)
         doc_df = pd.DataFrame(doc_resp.data)
         
-        # Se vier vazio do Supabase, retorna vazio para acionar o mock de segurança
         if func_df.empty or doc_df.empty:
             return pd.DataFrame(), pd.DataFrame()
 
@@ -334,7 +333,6 @@ def carregar_base():
         if not func_df.empty and not doc_df.empty:
             return (func_df, doc_df), True
     
-    # Fallback automático para dados simulados se o banco estiver vazio ou falhar
     return gerar_dados_mock(), False
 
 
@@ -598,6 +596,7 @@ for _, row in tabela.iterrows():
         """
     )
 
+# CORREÇÃO CRUCIAL: A estrutura completa da tabela deve estar em uma única string unificada para o st.markdown com unsafe_allow_html=True
 tabela_html = f"""
 <div style="max-height: 560px; overflow-y: auto; border: 1px solid #ECECEC; border-radius: 14px;">
 <table class="custom-table">
@@ -620,6 +619,7 @@ tabela_html = f"""
 </div>
 """
 
+# O parâmetro unsafe_allow_html=True garante que o Streamlit renderize o HTML como componentes visuais e não como texto puro
 st.markdown(tabela_html, unsafe_allow_html=True)
 
 st.caption(
