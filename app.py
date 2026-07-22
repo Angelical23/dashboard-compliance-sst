@@ -44,7 +44,6 @@ st.markdown(
             max-width: 1400px;
         }
 
-        /* ---------- TOP MAIN HEADER ---------- */
         .main-header-bar {
             background: linear-gradient(90deg, #0B2545 0%, #13315C 100%);
             border-radius: 12px;
@@ -57,7 +56,6 @@ st.markdown(
             letter-spacing: 0.3px;
         }
 
-        /* ---------- SUB-HEADER (PROFILE & DATE) ---------- */
         .sub-header-container {
             background: #FFFFFF;
             border: 1px solid #ECECEC;
@@ -94,7 +92,6 @@ st.markdown(
             margin: 0;
         }
 
-        /* ---------- METRIC CARDS ---------- */
         .metric-card {
             border-radius: 14px;
             padding: 18px 20px;
@@ -137,7 +134,6 @@ st.markdown(
         .metric-card.yellow  .m-value,  .metric-card.yellow  .m-sub { color: #9A6B00; }
         .metric-card.red     .m-value,  .metric-card.red     .m-sub { color: #B3261E; }
 
-        /* ---------- SECTION TITLES ---------- */
         .section-title {
             font-size: 16px;
             font-weight: 700;
@@ -153,7 +149,6 @@ st.markdown(
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
 
-        /* ---------- TABLE ---------- */
         table.custom-table {
             width: 100%;
             border-collapse: collapse;
@@ -214,9 +209,6 @@ st.markdown(
 )
 
 
-# ----------------------------------------------------------------------------
-# CONEXÃO COM SUPABASE
-# ----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_connection():
     try:
@@ -250,65 +242,6 @@ def status_grupo(status: str) -> str:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def gerar_dados_mock():
-    import random
-
-    random.seed(42)
-    hoje = dt.date.today()
-
-    # Base estendida com nomes consistentes para simular a imagem de referência
-    nomes = [
-        "Carlos Oliveira", "Fernanda Costa", "Pedro Santos", "Lucas Almeida",
-        "Lucas Almeida", "Jobs Almeida", "Carlia Olvera", "Lucas Almeida",
-        "Mariana Costa", "Ricardo Nunes", "Juliana Ferreira", "André Martins",
-        "Patrícia Gomes", "Bruno Castro", "Camila Rodrigues", "Felipe Teixeira",
-        "Larissa Vieira", "Rafael Cardoso", "Beatriz Nogueira", "Diego Cavalcante"
-    ]
-
-    funcionarios = []
-    for i, nome in enumerate(nomes, start=1):
-        funcionarios.append(
-            {
-                "id": i,
-                "nome_completo": f"{nome} {i if nomes.count(nome) > 1 else ''}".strip(),
-                "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
-                "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
-                "local_trabalho": random.choice(SETORES),
-            }
-        )
-    func_df = pd.DataFrame(funcionarios)
-
-    documentos = []
-    doc_id = 1
-    pesos = [0.83, 0.10, 0.07]
-    tipo_map = {tipo: idx for idx, tipo in enumerate(TIPOS_DOCUMENTO, start=1)}
-
-    for f in funcionarios:
-        for tipo in TIPOS_DOCUMENTO:
-            r = random.random()
-            if r < pesos[0]:
-                validade = hoje + dt.timedelta(days=random.randint(60, 400))
-            elif r < pesos[0] + pesos[1]:
-                validade = hoje + dt.timedelta(days=random.randint(1, 30))
-            else:
-                validade = hoje - dt.timedelta(days=random.randint(1, 120))
-
-            documentos.append(
-                {
-                    "id": doc_id,
-                    "colaborador_id": f["id"],
-                    "tipo_documento_id": tipo_map[tipo],
-                    "tipo_documento": tipo,
-                    "data_vencimento": validade,
-                }
-            )
-            doc_id += 1
-
-    doc_df = pd.DataFrame(documentos)
-    return func_df, doc_df
-
-
-@st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_supabase(_conn):
     func_resp = _conn.table("colaboradores").select(
         "id, nome_completo, cpf, foto_url, local_trabalho"
@@ -339,11 +272,8 @@ def carregar_base():
         try:
             return carregar_dados_supabase(conn), True
         except Exception as e:
-            st.warning(
-                f"Não foi possível ler os dados do Supabase ({e}). "
-                "Exibindo dados de demonstração."
-            )
-    return gerar_dados_mock(), False
+            st.warning(f"Erro ao ler do Supabase: {e}")
+    return pd.DataFrame(), pd.DataFrame()
 
 
 (func_df, doc_df), usando_supabase = carregar_base()
@@ -357,18 +287,13 @@ else:
     doc_df["status_grupo"] = "Regular"
 
 
-# ----------------------------------------------------------------------------
-# CABEÇALHOS (CONFORME SOLICITADO E IMAGEM)
-# ----------------------------------------------------------------------------
-# 1. Cabeçalho principal com o nome do Dashboard
+# Cabeçalhos
 st.markdown(
     '<div class="main-header-bar">GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE</div>',
     unsafe_allow_html=True
 )
 
-# 2. Sub-header contendo a foto e nome da gestora (Ana Silva) + Filtro de período
 col_sub1, col_sub2 = st.columns([6, 4])
-
 with col_sub1:
     st.markdown(
         """
@@ -386,23 +311,17 @@ with col_sub1:
     )
 
 with col_sub2:
-    # Usando container personalizado para alinhar o date_input elegantemente à direita
     st.markdown('<div style="display: flex; justify-content: flex-end;">', unsafe_allow_html=True)
     intervalo = st.date_input(
         "Período de análise",
-        value=(dt.date(2024, 1, 1), dt.date(2024, 12, 31)),
+        value=(dt.date(2026, 1, 1), dt.date(2026, 12, 31)),
         label_visibility="collapsed",
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-if not usando_supabase:
-    st.caption("⚠️ Modo demonstração: exibindo dados simulados (conexão Supabase não configurada).")
-
 st.write("")
 
-# ----------------------------------------------------------------------------
-# 1. CARDS DE MÉTRICAS
-# ----------------------------------------------------------------------------
+# 1. Métricas
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
@@ -431,7 +350,7 @@ with c1:
                 <span class="m-label">Total de Funcionários</span>
                 <span class="m-icon">👥</span>
             </div>
-            <div class="m-value">{total_funcionarios * 7}</div>
+            <div class="m-value">{total_funcionarios}</div>
             <div class="m-sub">&nbsp;</div>
         </div>
         """,
@@ -446,7 +365,7 @@ with c2:
                 <span class="m-label">Colaboradores em Dia</span>
                 <span class="m-icon">✅</span>
             </div>
-            <div class="m-value">{colaboradores_em_dia * 6} ({pct_em_dia}%)</div>
+            <div class="m-value">{colaboradores_em_dia} <span style="font-size: 18px;">({pct_em_dia}%)</span></div>
             <div class="m-sub">&nbsp;</div>
         </div>
         """,
@@ -485,9 +404,7 @@ with c4:
 
 st.write("")
 
-# ----------------------------------------------------------------------------
-# 2. GRÁFICOS
-# ----------------------------------------------------------------------------
+# 2. Gráficos
 graf_esq, graf_dir = st.columns([6, 4])
 CORES = {"Regular": "#2E6FE0", "Vence em Breve": "#F4C430", "Vencido": "#E5484D"}
 
@@ -564,9 +481,7 @@ with graf_dir:
 
 st.write("")
 
-# ----------------------------------------------------------------------------
-# 3. TABELA PRINCIPAL
-# ----------------------------------------------------------------------------
+# 3. Tabela Principal
 st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
