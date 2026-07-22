@@ -167,21 +167,14 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
-def classificar_status(data_validade: dt.date, hoje: dt.date) -> str:
-    if pd.isna(data_validade):
-        return "🛑 Vencido"
-    dias = (data_validade - hoje).days
-    if dias < 0:
-        return "🛑 Vencido"
-    if dias <= 30:
-        return f"⚠️ Vence em {dias} dias" if dias > 0 else "⚠️ Vence hoje"
-    return "✔️ Em Dia"
-
-
-def status_grupo(status: str) -> str:
-    if "Em Dia" in status:
+def mapear_status_grupo(status_bruto: str) -> str:
+    """Mapeia o texto exato do banco para as categorias dos gráficos."""
+    if not isinstance(status_bruto, str):
+        return "Vencido"
+    s = status_bruto.lower()
+    if "dia" in s or "regular" in s:
         return "Regular"
-    if "Vencido" in status:
+    if "vencido" in s or "🛑" in s:
         return "Vencido"
     return "Vence em Breve"
 
@@ -197,7 +190,7 @@ def carregar_dados_supabase(_conn):
         tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
         doc_resp = _conn.table("compliance_documentos").select(
-            "id, colaborador_id, tipo_documento_id, data_vencimento"
+            "id, colaborador_id, tipo_documento_id, status_documento"
         ).execute()
 
         func_df = pd.DataFrame(func_resp.data)
@@ -207,7 +200,22 @@ def carregar_dados_supabase(_conn):
             return pd.DataFrame(), pd.DataFrame()
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
-        doc_df["data_vencimento"] = pd.to_datetime(doc_df["data_vencimento"]).dt.date
+        
+        # Formata o status visual com ícones idênticos aos da tabela
+        def formatar_status_visual(val):
+            if not isinstance(val, str):
+                return "Em Dia"
+            v = val.strip().lower()
+            if "dia" in v:
+                return "✔️ Em Dia"
+            elif "vencido" in v:
+                return "🛑 Vencido"
+            else:
+                return f"⚠️ {val}"
+
+        doc_df["status_detalhado"] = doc_df["status_documento"].apply(formatar_status_visual)
+        doc_df["status_grupo"] = doc_df["status_documento"].apply(mapear_status_grupo)
+        
         return func_df, doc_df
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame()
@@ -218,15 +226,6 @@ if conn is not None:
     func_df, doc_df = carregar_dados_supabase(conn)
 else:
     func_df, doc_df = pd.DataFrame(), pd.DataFrame()
-
-hoje = dt.date.today()
-if not doc_df.empty and "data_vencimento" in doc_df.columns:
-    doc_df["status_detalhado"] = doc_df["data_vencimento"].apply(lambda d: classificar_status(d, hoje))
-    doc_df["status_grupo"] = doc_df["status_detalhado"].apply(status_grupo)
-else:
-    doc_df["status_detalhado"] = "✔️ Em Dia"
-    doc_df["status_grupo"] = "Regular"
-
 
 # Cabeçalhos
 st.markdown(
@@ -262,14 +261,14 @@ with col_sub2:
 
 st.write("")
 
-# 1. Métricas
+# 1. Métricas sincronizadas exatamente com o banco
 total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
 if not doc_df.empty and "colaborador_id" in doc_df.columns:
     status_por_func = (
-        doc_df.groupby("colaborador_id")["status_detalhado"]
-        .apply(lambda s: "Regular" if all("Em Dia" in x for x in s) else "Pendente")
+        doc_df.groupby("colaborador_id")["status_grupo"]
+        .apply(lambda s: "Regular" if all(x == "Regular" for x in s) else "Pendente")
     )
     colaboradores_em_dia = int((status_por_func == "Regular").sum())
 else:
@@ -452,7 +451,7 @@ if not doc_df.empty and not func_df.empty:
         }
     )
 else:
-    st.warning("⚠️ Atenção: Nenhuma linha foi retornada do Supabase. Verifique se as tabelas contêm registros inseridos e se o comando para desativar o RLS (segurança de leitura) foi executado no SQL Editor do Supabase.")
+    st.warning("⚠️ Nenhum registro encontrado.")
 
 st.caption(
     f"Exibindo dados reais do Supabase · Última atualização: "
