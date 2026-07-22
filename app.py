@@ -320,7 +320,7 @@ def gerar_dados_mock():
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_supabase(_conn):
     """Busca funcionários e documentos no Supabase."""
-    func_resp = _conn.table("funcionarios").select(
+    func_resp = _conn.table("colaboradores").select(
         "funcionario_id, nome_completo, cpf, foto_url, setor"
     ).execute()
     doc_resp = _conn.table("documentos").select(
