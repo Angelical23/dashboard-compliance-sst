@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from st_supabase_connection import SupabaseConnection
+import popular_banco; popular_banco.popular_dados()
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="Dashboard de Compliance SST", layout="wide")
@@ -105,3 +106,5 @@ if not df_comp.empty:
     st.dataframe(df_pivot, use_container_width=True)
 else:
     st.warning("Nenhum dado encontrado. Execute o script 'popular_banco.py' primeiro.")
+    
+
