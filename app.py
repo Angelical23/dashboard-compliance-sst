@@ -226,13 +226,33 @@ else:
 
 
 # ----------------------------------------------------------------------------
+# MODAL: GERENCIAR / EXCLUIR REGISTRO SELECIONADO
+# ----------------------------------------------------------------------------
+@st.dialog("Gerenciar Registro do Colaborador")
+def modal_gerenciar_colaborador(conn, colaborador):
+    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
+    st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
+    st.markdown("---")
+    st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
+    
+    if st.button("🗑️ Excluir Colaborador Permanentemente", type="primary", use_container_width=True):
+        try:
+            conn.table("colaboradores").delete().eq("id", colaborador["id"]).execute()
+            st.success("Colaborador excluído com sucesso!")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao excluir: {e}")
+
+
+# ----------------------------------------------------------------------------
 # NAVEGAÇÃO POR ABAS SUPERIORES (Dashboard vs Novo Registro)
 # ----------------------------------------------------------------------------
 aba_principal, aba_cadastro = st.tabs(["📊 Dashboard de Compliance", "➕ Cadastrar Novo Colaborador"])
 
 
 # ============================================================================
-# ABA 1: DASHBOARD COMPLETO
+# ABA 1: DASHBOARD COMPLETO (Com as métricas, gráficos e tabela de registros)
 # ============================================================================
 with aba_principal:
     st.markdown(
@@ -427,6 +447,57 @@ with aba_principal:
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.write("")
+
+    # Tabela Interativa de Visão Geral com Seleção de Gerenciamento
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
+
+    if not doc_df.empty and not func_df.empty:
+        pivot_status = doc_df.pivot_table(
+            index="colaborador_id",
+            columns="tipo_documento",
+            values="status_detalhado",
+            aggfunc="first",
+        ).reindex(columns=TIPOS_DOCUMENTO)
+
+        tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
+        
+        tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
+        tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
+        tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
+
+        col_sel, col_del = st.columns([6, 2])
+        with col_sel:
+            coluna_selecao = st.selectbox(
+                "Selecione um colaborador para gerenciar/excluir:",
+                options=tabela_exibicao["ID"].tolist(),
+                format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0],
+                label_visibility="collapsed"
+            )
+        with col_del:
+            if st.button("⚙️ Gerenciar Selecionado", use_container_width=True):
+                if coluna_selecao:
+                    colaborador_selecionado = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    modal_gerenciar_colaborador(conn, colaborador_selecionado)
+
+        st.dataframe(
+            tabela_exibicao.drop(columns=["ID"]),
+            use_container_width=True,
+            hide_index=True,
+            height=380,
+            column_config={
+                "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
+                "CPF": st.column_config.TextColumn("CPF", width="small"),
+                "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
+                "Ações": st.column_config.TextColumn("Ações", width="small"),
+            }
+        )
+    else:
+        st.warning("⚠️ Nenhum registro encontrado.")
+
+    st.caption(
+        f"Exibindo dados reais do Supabase · Última atualização: "
+        f"{dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    )
 
 
 # ============================================================================
