@@ -2,10 +2,7 @@
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
 Dashboard Streamlit conectado ao Supabase para acompanhamento de
-documentação obrigatória de SST (ASO, Ficha de Admissão, Ficha de EPI,
-Certificado NR06) por colaborador e por setor.
-
-Autor: Engenharia de Dados / Streamlit
+documentação obrigatória de SST por colaborador e por setor.
 """
 
 import datetime as dt
@@ -223,8 +220,6 @@ st.markdown(
 # ----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_connection():
-    """Cria a conexão com o Supabase. Retorna None caso indisponível,
-    permitindo que o app rode em modo demonstração com dados simulados."""
     try:
         conn = st.connection("supabase", type=SupabaseConnection)
         return conn
@@ -237,7 +232,6 @@ SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
 def classificar_status(data_validade: dt.date, hoje: dt.date) -> str:
-    """Classifica um documento de acordo com a data de validade."""
     if pd.isna(data_validade):
         return "Vencido"
     dias = (data_validade - hoje).days
@@ -249,7 +243,6 @@ def classificar_status(data_validade: dt.date, hoje: dt.date) -> str:
 
 
 def status_grupo(status: str) -> str:
-    """Agrupa o status detalhado em 3 categorias para gráficos."""
     if status == "Em Dia":
         return "Regular"
     if status == "Vencido":
@@ -259,8 +252,6 @@ def status_grupo(status: str) -> str:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def gerar_dados_mock():
-    """Gera uma base de dados simulada, usada quando não há credenciais
-    do Supabase configuradas (modo demonstração)."""
     import random
 
     random.seed(42)
@@ -280,19 +271,22 @@ def gerar_dados_mock():
     for i, nome in enumerate(nomes, start=1):
         funcionarios.append(
             {
-                "funcionario_id": i,
+                "id": i,
                 "nome_completo": nome,
                 "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
                 "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
-                "setor": random.choice(SETORES),
+                "local_trabalho": random.choice(SETORES),
             }
         )
     func_df = pd.DataFrame(funcionarios)
 
     documentos = []
     doc_id = 1
-    # distribuição controlada para bater aproximadamente com os %s de referência
-    pesos = [0.83, 0.10, 0.07]  # Em Dia / Vence em breve / Vencido
+    pesos = [0.83, 0.10, 0.07]
+    
+    # Mapeando IDs de tipos de documento para simulação
+    tipo_map = {tipo: idx for idx, tipo in enumerate(TIPOS_DOCUMENTO, start=1)}
+
     for f in funcionarios:
         for tipo in TIPOS_DOCUMENTO:
             r = random.random()
@@ -305,10 +299,11 @@ def gerar_dados_mock():
 
             documentos.append(
                 {
-                    "documento_id": doc_id,
-                    "funcionario_id": f["funcionario_id"],
+                    "id": doc_id,
+                    "colaborador_id": f["id"],
+                    "tipo_documento_id": tipo_map[tipo],
                     "tipo_documento": tipo,
-                    "data_validade": validade,
+                    "data_vencimento": validade,
                 }
             )
             doc_id += 1
@@ -319,17 +314,29 @@ def gerar_dados_mock():
 
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_supabase(_conn):
-    """Busca funcionários e documentos no Supabase."""
-    func_resp = _conn.table("funcionarios").select(
-        "funcionario_id, nome_completo, cpf, foto_url, setor"
+    # Busca colaboradores
+    func_resp = _conn.table("colaboradores").select(
+        "id, nome_completo, cpf, foto_url, local_trabalho"
     ).execute()
-    doc_resp = _conn.table("documentos").select(
-        "documento_id, funcionario_id, tipo_documento, data_validade"
+    
+    # Busca tipos de documento para traduzir o ID em nome legível
+    tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
+    tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
+
+    # Busca compliance_documentos
+    doc_resp = _conn.table("compliance_documentos").select(
+        "id, colaborador_id, tipo_documento_id, data_vencimento"
     ).execute()
 
     func_df = pd.DataFrame(func_resp.data)
     doc_df = pd.DataFrame(doc_resp.data)
-    doc_df["data_validade"] = pd.to_datetime(doc_df["data_validade"]).dt.date
+    
+    if not doc_df.empty:
+        doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
+        doc_df["data_vencimento"] = pd.to_datetime(doc_df["data_vencimento"]).dt.date
+    else:
+        doc_df = pd.DataFrame(columns=["id", "colaborador_id", "tipo_documento_id", "tipo_documento", "data_vencimento"])
+
     return func_df, doc_df
 
 
@@ -349,8 +356,12 @@ def carregar_base():
 (func_df, doc_df), usando_supabase = carregar_base()
 
 hoje = dt.date.today()
-doc_df["status_detalhado"] = doc_df["data_validade"].apply(lambda d: classificar_status(d, hoje))
-doc_df["status_grupo"] = doc_df["status_detalhado"].apply(status_grupo)
+if not doc_df.empty and "data_vencimento" in doc_df.columns:
+    doc_df["status_detalhado"] = doc_df["data_vencimento"].apply(lambda d: classificar_status(d, hoje))
+    doc_df["status_grupo"] = doc_df["status_detalhado"].apply(status_grupo)
+else:
+    doc_df["status_detalhado"] = "Em Dia"
+    doc_df["status_grupo"] = "Regular"
 
 
 # ----------------------------------------------------------------------------
@@ -405,20 +416,22 @@ if not usando_supabase:
 # ----------------------------------------------------------------------------
 # 1. CARDS DE MÉTRICAS
 # ----------------------------------------------------------------------------
-total_funcionarios = func_df["funcionario_id"].nunique()
+total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
 total_documentos = len(doc_df)
 
-status_por_func = (
-    doc_df.groupby("funcionario_id")["status_detalhado"]
-    .apply(lambda s: "Em Dia" if (s == "Em Dia").all() else "Pendente")
-)
-colaboradores_em_dia = int((status_por_func == "Em Dia").sum())
+if not doc_df.empty and "colaborador_id" in doc_df.columns:
+    status_por_func = (
+        doc_df.groupby("colaborador_id")["status_detalhado"]
+        .apply(lambda s: "Em Dia" if (s == "Em Dia").all() else "Pendente")
+    )
+    colaboradores_em_dia = int((status_por_func == "Em Dia").sum())
+else:
+    colaboradores_em_dia = 0
+
 pct_em_dia = round(100 * colaboradores_em_dia / total_funcionarios) if total_funcionarios else 0
-
-qtd_vencendo = int((doc_df["status_grupo"] == "Vence em Breve").sum())
+qtd_vencendo = int((doc_df["status_grupo"] == "Vence em Breve").sum()) if not doc_df.empty else 0
 pct_vencendo = round(100 * qtd_vencendo / total_documentos) if total_documentos else 0
-
-qtd_vencido = int((doc_df["status_grupo"] == "Vencido").sum())
+qtd_vencido = int((doc_df["status_grupo"] == "Vencido").sum()) if not doc_df.empty else 0
 pct_vencido = round(100 * qtd_vencido / total_documentos) if total_documentos else 0
 
 c1, c2, c3, c4 = st.columns(4)
@@ -489,35 +502,36 @@ st.write("")
 # 2. GRÁFICOS
 # ----------------------------------------------------------------------------
 graf_esq, graf_dir = st.columns([6, 4])
-
 CORES = {"Regular": "#2E6FE0", "Vence em Breve": "#F4C430", "Vencido": "#E5484D"}
 
 with graf_esq:
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Status de Documentação por Setor</div>', unsafe_allow_html=True)
 
-    doc_setor = doc_df.merge(func_df[["funcionario_id", "setor"]], on="funcionario_id", how="left")
-    contagem = (
-        doc_setor.groupby(["setor", "status_grupo"])
-        .size()
-        .reset_index(name="quantidade")
-    )
-    # garantir todas as combinações setor x status, mesmo com zero
-    todas_combos = pd.MultiIndex.from_product(
-        [SETORES, ["Regular", "Vence em Breve", "Vencido"]], names=["setor", "status_grupo"]
-    ).to_frame(index=False)
-    contagem = todas_combos.merge(contagem, on=["setor", "status_grupo"], how="left").fillna(0)
-    contagem["quantidade"] = contagem["quantidade"].astype(int)
+    if not doc_df.empty and not func_df.empty:
+        doc_setor = doc_df.merge(func_df[["id", "local_trabalho"]], left_on="colaborador_id", right_on="id", how="left")
+        contagem = (
+            doc_setor.groupby(["local_trabalho", "status_grupo"])
+            .size()
+            .reset_index(name="quantidade")
+        )
+        todas_combos = pd.MultiIndex.from_product(
+            [SETORES, ["Regular", "Vence em Breve", "Vencido"]], names=["local_trabalho", "status_grupo"]
+        ).to_frame(index=False)
+        contagem = todas_combos.merge(contagem, on=["local_trabalho", "status_grupo"], how="left").fillna(0)
+        contagem["quantidade"] = contagem["quantidade"].astype(int)
+    else:
+        contagem = pd.DataFrame(columns=["local_trabalho", "status_grupo", "quantidade"])
 
     fig_bar = px.bar(
         contagem,
-        x="setor",
+        x="local_trabalho",
         y="quantidade",
         color="status_grupo",
         barmode="group",
         color_discrete_map=CORES,
-        category_orders={"setor": SETORES, "status_grupo": ["Regular", "Vence em Breve", "Vencido"]},
-        labels={"setor": "Setor", "quantidade": "Qtd. de Documentos", "status_grupo": "Status"},
+        category_orders={"local_trabalho": SETORES, "status_grupo": ["Regular", "Vence em Breve", "Vencido"]},
+        labels={"local_trabalho": "Setor", "quantidade": "Qtd. de Documentos", "status_grupo": "Status"},
     )
     fig_bar.update_layout(
         height=360,
@@ -534,9 +548,12 @@ with graf_dir:
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Distribuição de Documentos Pendentes</div>', unsafe_allow_html=True)
 
-    pendentes = doc_df[doc_df["status_grupo"] != "Regular"]
-    pendentes_por_tipo = pendentes.groupby("tipo_documento").size().reset_index(name="quantidade")
-    pendentes_por_tipo = pendentes_por_tipo.set_index("tipo_documento").reindex(TIPOS_DOCUMENTO, fill_value=0).reset_index()
+    if not doc_df.empty:
+        pendentes = doc_df[doc_df["status_grupo"] != "Regular"]
+        pendentes_por_tipo = pendentes.groupby("tipo_documento").size().reset_index(name="quantidade")
+        pendentes_por_tipo = pendentes_por_tipo.set_index("tipo_documento").reindex(TIPOS_DOCUMENTO, fill_value=0).reset_index()
+    else:
+        pendentes_por_tipo = pd.DataFrame({"tipo_documento": TIPOS_DOCUMENTO, "quantidade": [0]*4})
 
     fig_donut = go.Figure(
         data=[
@@ -565,15 +582,17 @@ st.write("")
 # ----------------------------------------------------------------------------
 st.markdown('<div class="section-title">Visão Geral de Documentação por Colaborador</div>', unsafe_allow_html=True)
 
-# pivotar documentos: uma linha por funcionário, uma coluna por tipo de documento
-pivot_status = doc_df.pivot_table(
-    index="funcionario_id",
-    columns="tipo_documento",
-    values="status_detalhado",
-    aggfunc="first",
-).reindex(columns=TIPOS_DOCUMENTO)
+if not doc_df.empty and not func_df.empty:
+    pivot_status = doc_df.pivot_table(
+        index="colaborador_id",
+        columns="tipo_documento",
+        values="status_detalhado",
+        aggfunc="first",
+    ).reindex(columns=TIPOS_DOCUMENTO)
 
-tabela = func_df.merge(pivot_status, on="funcionario_id", how="left").sort_values("nome_completo")
+    tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
+else:
+    tabela = pd.DataFrame(columns=["id", "nome_completo", "cpf", "local_trabalho", "foto_url"])
 
 
 def render_pill(status: str) -> str:
@@ -593,12 +612,12 @@ for _, row in tabela.iterrows():
         <tr>
             <td>
                 <div class="emp-cell">
-                    <img src="{row['foto_url']}" />
-                    <span>{row['nome_completo']}</span>
+                    <img src="{row.get('foto_url', 'https://i.pravatar.cc/150')}" />
+                    <span>{row.get('nome_completo', '')}</span>
                 </div>
             </td>
-            <td>{row['cpf']}</td>
-            <td>{row['setor']}</td>
+            <td>{row.get('cpf', '')}</td>
+            <td>{row.get('local_trabalho', '')}</td>
             <td>{render_pill(row.get('Ficha Admissão'))}</td>
             <td>{render_pill(row.get('ASO'))}</td>
             <td>{render_pill(row.get('Ficha de EPI'))}</td>
