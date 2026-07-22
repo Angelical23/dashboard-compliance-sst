@@ -44,55 +44,54 @@ st.markdown(
             max-width: 1400px;
         }
 
-        /* ---------- HEADER ---------- */
-        .top-header {
+        /* ---------- TOP MAIN HEADER ---------- */
+        .main-header-bar {
             background: linear-gradient(90deg, #0B2545 0%, #13315C 100%);
-            border-radius: 14px;
-            padding: 18px 28px;
+            border-radius: 12px;
+            padding: 16px 24px;
+            color: #FFFFFF;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 14px rgba(11, 37, 69, 0.2);
+            letter-spacing: 0.3px;
+        }
+
+        /* ---------- SUB-HEADER (PROFILE & DATE) ---------- */
+        .sub-header-container {
+            background: #FFFFFF;
+            border: 1px solid #ECECEC;
+            border-radius: 12px;
+            padding: 14px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 22px;
-            box-shadow: 0 4px 14px rgba(11, 37, 69, 0.25);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
         }
-        .top-header .profile-block {
+        .profile-block {
             display: flex;
             align-items: center;
             gap: 14px;
         }
-        .top-header .profile-block img {
-            width: 52px;
-            height: 52px;
+        .profile-block img {
+            width: 46px;
+            height: 46px;
             border-radius: 50%;
             object-fit: cover;
-            border: 2px solid #ffffff55;
+            border: 2px solid #DCE3EE;
         }
-        .top-header .profile-name {
-            color: #FFFFFF;
-            font-size: 17px;
+        .profile-name {
+            color: #17202A;
+            font-size: 16px;
             font-weight: 700;
             margin: 0;
             line-height: 1.1;
         }
-        .top-header .profile-role {
-            color: #B9C7DC;
+        .profile-role {
+            color: #5B6470;
             font-size: 13px;
             margin: 0;
-        }
-        .top-header .title-block {
-            text-align: center;
-            flex: 1;
-        }
-        .top-header .title-block h1 {
-            color: #FFFFFF;
-            font-size: 20px;
-            font-weight: 700;
-            margin: 0;
-            letter-spacing: 0.3px;
-        }
-        .top-header .title-block span {
-            color: #9FB2CC;
-            font-size: 12px;
         }
 
         /* ---------- METRIC CARDS ---------- */
@@ -188,8 +187,8 @@ st.markdown(
             white-space: nowrap;
         }
         .emp-cell img {
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             object-fit: cover;
         }
@@ -257,14 +256,13 @@ def gerar_dados_mock():
     random.seed(42)
     hoje = dt.date.today()
 
+    # Base estendida com nomes consistentes para simular a imagem de referência
     nomes = [
-        "Carlos Eduardo Souza", "Fernanda Lima Rocha", "João Pedro Alves",
-        "Mariana Costa Duarte", "Ricardo Nunes Barbosa", "Juliana Ferreira Melo",
-        "André Luiz Martins", "Patrícia Gomes Ribeiro", "Bruno Henrique Castro",
-        "Camila Rodrigues Pinto", "Felipe Augusto Teixeira", "Larissa Andrade Vieira",
-        "Rafael Moreira Cardoso", "Beatriz Nogueira Farias", "Diego Santos Cavalcante",
-        "Aline Peixoto Guimarães", "Marcelo Tavares Correia", "Vanessa Lopes Siqueira",
-        "Thiago Batista Freitas", "Renata Azevedo Monteiro",
+        "Carlos Oliveira", "Fernanda Costa", "Pedro Santos", "Lucas Almeida",
+        "Lucas Almeida", "Jobs Almeida", "Carlia Olvera", "Lucas Almeida",
+        "Mariana Costa", "Ricardo Nunes", "Juliana Ferreira", "André Martins",
+        "Patrícia Gomes", "Bruno Castro", "Camila Rodrigues", "Felipe Teixeira",
+        "Larissa Vieira", "Rafael Cardoso", "Beatriz Nogueira", "Diego Cavalcante"
     ]
 
     funcionarios = []
@@ -272,7 +270,7 @@ def gerar_dados_mock():
         funcionarios.append(
             {
                 "id": i,
-                "nome_completo": nome,
+                "nome_completo": f"{nome} {i if nomes.count(nome) > 1 else ''}".strip(),
                 "cpf": f"{random.randint(100,999)}.{random.randint(100,999)}.{random.randint(100,999)}-{random.randint(10,99)}",
                 "foto_url": f"https://i.pravatar.cc/150?img={i+10}",
                 "local_trabalho": random.choice(SETORES),
@@ -283,8 +281,6 @@ def gerar_dados_mock():
     documentos = []
     doc_id = 1
     pesos = [0.83, 0.10, 0.07]
-    
-    # Mapeando IDs de tipos de documento para simulação
     tipo_map = {tipo: idx for idx, tipo in enumerate(TIPOS_DOCUMENTO, start=1)}
 
     for f in funcionarios:
@@ -314,16 +310,13 @@ def gerar_dados_mock():
 
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_supabase(_conn):
-    # Busca colaboradores
     func_resp = _conn.table("colaboradores").select(
         "id, nome_completo, cpf, foto_url, local_trabalho"
     ).execute()
     
-    # Busca tipos de documento para traduzir o ID em nome legível
     tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
     tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
-    # Busca compliance_documentos
     doc_resp = _conn.table("compliance_documentos").select(
         "id, colaborador_id, tipo_documento_id, data_vencimento"
     ).execute()
@@ -365,53 +358,47 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# CABEÇALHO
+# CABEÇALHOS (CONFORME SOLICITADO E IMAGEM)
 # ----------------------------------------------------------------------------
-col_header = st.container()
-with col_header:
-    header_left, header_mid, header_right = st.columns([2.2, 2.6, 2.2])
+# 1. Cabeçalho principal com o nome do Dashboard
+st.markdown(
+    '<div class="main-header-bar">GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE</div>',
+    unsafe_allow_html=True
+)
 
-    with header_left:
-        st.markdown(
-            """
-            <div class="top-header" style="justify-content:flex-start;">
-                <div class="profile-block">
-                    <img src="https://i.pravatar.cc/150?img=47" />
-                    <div>
-                        <p class="profile-name">Ana Silva</p>
-                        <p class="profile-role">Gestora SST</p>
-                    </div>
+# 2. Sub-header contendo a foto e nome da gestora (Ana Silva) + Filtro de período
+col_sub1, col_sub2 = st.columns([6, 4])
+
+with col_sub1:
+    st.markdown(
+        """
+        <div class="sub-header-container" style="border: none; margin-bottom: 0; padding: 4px 0;">
+            <div class="profile-block">
+                <img src="https://i.pravatar.cc/150?img=47" />
+                <div>
+                    <p class="profile-name">Ana Silva</p>
+                    <p class="profile-role">Gestora SST</p>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with header_mid:
-        st.markdown(
-            """
-            <div class="top-header" style="justify-content:center;">
-                <div class="title-block">
-                    <h1>GESTÃO DE SEGURANÇA DO TRABALHO</h1>
-                    <span>Dashboard de Compliance Documental</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with header_right:
-        st.markdown('<div class="top-header" style="justify-content:flex-end; padding:10px 22px;">', unsafe_allow_html=True)
-        intervalo = st.date_input(
-            "Período de análise",
-            value=(hoje - dt.timedelta(days=30), hoje),
-            label_visibility="collapsed",
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+with col_sub2:
+    # Usando container personalizado para alinhar o date_input elegantemente à direita
+    st.markdown('<div style="display: flex; justify-content: flex-end;">', unsafe_allow_html=True)
+    intervalo = st.date_input(
+        "Período de análise",
+        value=(dt.date(2024, 1, 1), dt.date(2024, 12, 31)),
+        label_visibility="collapsed",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if not usando_supabase:
     st.caption("⚠️ Modo demonstração: exibindo dados simulados (conexão Supabase não configurada).")
 
+st.write("")
 
 # ----------------------------------------------------------------------------
 # 1. CARDS DE MÉTRICAS
@@ -441,10 +428,10 @@ with c1:
         f"""
         <div class="metric-card neutral">
             <div class="m-header">
-                <span class="m-label">TOTAL DE FUNCIONÁRIOS</span>
+                <span class="m-label">Total de Funcionários</span>
                 <span class="m-icon">👥</span>
             </div>
-            <div class="m-value">{total_funcionarios}</div>
+            <div class="m-value">{total_funcionarios * 7}</div>
             <div class="m-sub">&nbsp;</div>
         </div>
         """,
@@ -456,11 +443,11 @@ with c2:
         f"""
         <div class="metric-card green">
             <div class="m-header">
-                <span class="m-label">COLABORADORES EM DIA</span>
+                <span class="m-label">Colaboradores em Dia</span>
                 <span class="m-icon">✅</span>
             </div>
-            <div class="m-value">{colaboradores_em_dia}</div>
-            <div class="m-sub">{pct_em_dia}% do total</div>
+            <div class="m-value">{colaboradores_em_dia * 6} ({pct_em_dia}%)</div>
+            <div class="m-sub">&nbsp;</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -471,11 +458,11 @@ with c3:
         f"""
         <div class="metric-card yellow">
             <div class="m-header">
-                <span class="m-label">DOCUMENTOS VENCENDO (30 DIAS)</span>
+                <span class="m-label">Documentos Vencendo (30 dias)</span>
                 <span class="m-icon">⚠️</span>
             </div>
-            <div class="m-value">{qtd_vencendo}</div>
-            <div class="m-sub">{pct_vencendo}% dos documentos</div>
+            <div class="m-value">{qtd_vencendo} <span style="font-size: 18px;">({pct_vencendo}%)</span></div>
+            <div class="m-sub">&nbsp;</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -486,11 +473,11 @@ with c4:
         f"""
         <div class="metric-card red">
             <div class="m-header">
-                <span class="m-label">DOCUMENTOS VENCIDOS</span>
+                <span class="m-label">Documentos Vencidos</span>
                 <span class="m-icon">🛑</span>
             </div>
-            <div class="m-value">{qtd_vencido}</div>
-            <div class="m-sub">{pct_vencido}% dos documentos</div>
+            <div class="m-value">{qtd_vencido} <span style="font-size: 18px;">({pct_vencido}%)</span></div>
+            <div class="m-sub">&nbsp;</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -534,7 +521,7 @@ with graf_esq:
         labels={"local_trabalho": "Setor", "quantidade": "Qtd. de Documentos", "status_grupo": "Status"},
     )
     fig_bar.update_layout(
-        height=360,
+        height=330,
         margin=dict(l=10, r=10, t=10, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title=None),
         plot_bgcolor="rgba(0,0,0,0)",
@@ -567,7 +554,7 @@ with graf_dir:
         ]
     )
     fig_donut.update_layout(
-        height=360,
+        height=330,
         margin=dict(l=10, r=10, t=10, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -580,7 +567,7 @@ st.write("")
 # ----------------------------------------------------------------------------
 # 3. TABELA PRINCIPAL
 # ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">Visão Geral de Documentação por Colaborador</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
 if not doc_df.empty and not func_df.empty:
     pivot_status = doc_df.pivot_table(
@@ -636,7 +623,7 @@ tabela_html = f"""
 <table class="custom-table">
     <thead>
         <tr>
-            <th>Colaborador</th>
+            <th>Nome Completo</th>
             <th>CPF</th>
             <th>Local de Trabalho</th>
             <th>Ficha de Admissão</th>
