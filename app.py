@@ -246,13 +246,13 @@ def modal_gerenciar_colaborador(conn, colaborador):
 
 
 # ----------------------------------------------------------------------------
-# NAVEGAÇÃO POR ABAS SUPERIORES (Dashboard vs Novo Registro)
+# NAVEGAÇÃO POR ABAS SUPERIORES
 # ----------------------------------------------------------------------------
 aba_principal, aba_cadastro = st.tabs(["📊 Dashboard de Compliance", "➕ Cadastrar Novo Colaborador"])
 
 
 # ============================================================================
-# ABA 1: DASHBOARD COMPLETO (Com as métricas, gráficos e tabela de registros)
+# ABA 1: DASHBOARD COMPLETO (Com Angelica Alves como Gestora SST)
 # ============================================================================
 with aba_principal:
     st.markdown(
@@ -266,9 +266,9 @@ with aba_principal:
             """
             <div class="sub-header-container" style="border: none; margin-bottom: 0; padding: 4px 0;">
                 <div class="profile-block">
-                    <img src="https://i.pravatar.cc/150?img=47" />
+                    <img src="https://i.pravatar.cc/150?img=32" />
                     <div>
-                        <p class="profile-name">Ana Silva</p>
+                        <p class="profile-name">Angelica Alves</p>
                         <p class="profile-role">Gestora SST</p>
                     </div>
                 </div>
@@ -448,7 +448,7 @@ with aba_principal:
 
     st.write("")
 
-    # Tabela Interativa de Visão Geral com Seleção de Gerenciamento
+    # Tabela Interativa de Visão Geral
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
@@ -501,11 +501,11 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA SEPARADA DE CADASTRO DE NOVO COLABORADOR
+# ABA 2: TELA DE CADASTRO COM OPÇÃO DE LINK DE FOTO PERSONALIZADA
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E DOCUMENTAÇÃO SST</div>', unsafe_allow_html=True)
-    st.info("💡 Preencha as informações abaixo e clique em salvar para registrar um novo colaborador diretamente no banco de dados do Supabase.")
+    st.info("💡 Preencha as informações do novo colaborador, defina o link de uma foto personalizada (opcional) e salve diretamente no Supabase.")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
@@ -516,6 +516,12 @@ with aba_cadastro:
             cpf = st.text_input("CPF *")
         with f_col3:
             setor = st.selectbox("Setor / Local de Trabalho", SETORES)
+        
+        # Campo para inserir link de foto personalizado
+        foto_url_input = st.text_input(
+            "Link da Foto do Colaborador (Opcional - ex: URL de imagem da web ou deixe em branco)",
+            value=""
+        )
         
         st.markdown("---")
         st.subheader("Status Inicial dos Documentos Obrigatórios")
@@ -530,7 +536,7 @@ with aba_cadastro:
             status_nr06 = st.selectbox("Certificado NR06", ["Em Dia", "Vencido", "Vence em Breve"])
         
         st.write("")
-        b_salvar, b_cancelar = st.columns([2, 8])
+        b_salvar, _ = st.columns([2, 8])
         with b_salvar:
             enviar = st.form_submit_button("💾 Salvar Registro", use_container_width=True)
         
@@ -538,12 +544,14 @@ with aba_cadastro:
             if nome and cpf:
                 if conn is not None:
                     try:
-                        foto_padrao = f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
+                        # Se o usuário preencheu uma foto válida usa ela, senão gera uma padrão aleatória
+                        foto_final = foto_url_input.strip() if foto_url_input and foto_url_input.startswith("http") else f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
+                        
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
                             "cpf": cpf,
                             "local_trabalho": setor,
-                            "foto_url": foto_padrao
+                            "foto_url": foto_final
                         }).execute()
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
