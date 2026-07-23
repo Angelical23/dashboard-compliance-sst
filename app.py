@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com design moderno focado em SST.
+Dashboard corporativo com upload e anexos de documentos SST.
 """
 
 import datetime as dt
@@ -38,7 +38,6 @@ st.markdown(
         footer {visibility: hidden;}
         header[data-testid="stHeader"] {background: transparent;}
 
-        /* Fundo geral da aplicação com cinza corporativo suave */
         .stApp {
             background-color: #F4F6F9;
         }
@@ -49,7 +48,6 @@ st.markdown(
             max-width: 1400px;
         }
 
-        /* Barra de Título Superior Moderna */
         .main-header-bar {
             background: linear-gradient(135deg, #0A2540 0%, #1E3A8A 100%);
             border-radius: 14px;
@@ -62,7 +60,6 @@ st.markdown(
             letter-spacing: 0.4px;
         }
 
-        /* Container do Perfil */
         .sub-header-container {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -87,7 +84,6 @@ st.markdown(
             margin: 0;
         }
 
-        /* Cards de Métricas Estilo SaaS / Dashboard Profissional */
         .metric-card {
             border-radius: 14px;
             padding: 20px;
@@ -127,7 +123,6 @@ st.markdown(
             font-weight: 600;
         }
         
-        /* Variações de cores dos cards */
         .metric-card.neutral { border-left: 4px solid #3B82F6; }
         .metric-card.green   { border-left: 4px solid #10B981; background: #F0FDF4; }
         .metric-card.yellow  { border-left: 4px solid #F59E0B; background: #FFFBEB; }
@@ -171,32 +166,41 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_por_data(data_val):
+def calcular_status_por_data(data_val, arquivo_url):
     if not data_val or pd.isna(data_val):
-        return "Regular", "✔️ Sem Data"
-    
-    try:
-        if isinstance(data_val, str):
-            dt_val = dt.datetime.strptime(data_val.strip()[:10], "%Y-%m-%d").date()
-        elif isinstance(data_val, dt.datetime):
-            dt_val = data_val.date()
-        elif isinstance(data_val, dt.date):
-            dt_val = data_val
-        else:
-            return "Regular", "✔️ Em Dia"
-    except Exception:
-        return "Regular", "✔️ Em Dia"
-
-    hoje = dt.date.today()
-    dias_restantes = (dt_val - hoje).days
-    data_formatada = dt_val.strftime('%d/%m/%Y')
-
-    if dias_restantes < 0:
-        return "Vencido", f"🛑 Vencido ({data_formatada})"
-    elif 0 <= dias_restantes <= 30:
-        return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
+        status_txt = "✔️ Sem Data"
+        grupo = "Regular"
     else:
-        return "Regular", f"✔️ {data_formatada}"
+        try:
+            if isinstance(data_val, str):
+                dt_val = dt.datetime.strptime(data_val.strip()[:10], "%Y-%m-%d").date()
+            elif isinstance(data_val, dt.datetime):
+                dt_val = data_val.date()
+            elif isinstance(data_val, dt.date):
+                dt_val = data_val
+            else:
+                dt_val = dt.date.today()
+        except Exception:
+            dt_val = dt.date.today()
+
+        hoje = dt.date.today()
+        dias_restantes = (dt_val - hoje).days
+        data_formatada = dt_val.strftime('%d/%m/%Y')
+
+        if dias_restantes < 0:
+            grupo = "Vencido"
+            status_txt = f"🛑 Vencido ({data_formatada})"
+        elif 0 <= dias_restantes <= 30:
+            grupo = "Vence em Breve"
+            status_txt = f"⚠️ Vence em {data_formatada}"
+        else:
+            grupo = "Regular"
+            status_txt = f"✔️ {data_formatada}"
+
+    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
+        status_txt += f" [📎 Ver]({arquivo_url})"
+
+    return grupo, status_txt
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -210,7 +214,7 @@ def carregar_dados_supabase(_conn):
         tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
         doc_resp = _conn.table("compliance_documentos").select(
-            "id, colaborador_id, tipo_documento_id, data_validade"
+            "id, colaborador_id, tipo_documento_id, data_validade, arquivo_url"
         ).execute()
 
         func_df = pd.DataFrame(func_resp.data)
@@ -221,7 +225,7 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        status_calculados = doc_df["data_validade"].apply(calcular_status_por_data)
+        status_calculados = doc_df.apply(lambda r: calcular_status_por_data(r["data_validade"], r.get("arquivo_url")), axis=1)
         doc_df["status_grupo"] = [s[0] for s in status_calculados]
         doc_df["status_detalhado"] = [s[1] for s in status_calculados]
         
@@ -255,7 +259,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
         st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
     
     st.markdown("---")
-    st.subheader("Histórico de Validade dos Documentos")
+    st.subheader("Documentos e Anexos")
     
     for _, doc in docs_colab.iterrows():
         st.write(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}")
@@ -266,15 +270,17 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS
+# MODAL 2: EDITAR PRAZOS E ANEXOS
 # ----------------------------------------------------------------------------
-@st.dialog("✏️ Atualizar Prazos de Validade")
+@st.dialog("✏️ Atualizar Prazos e Anexos")
 def modal_editar_prazos(conn, colaborador, docs_colab):
-    st.write(f"Editando laudos de: **{colaborador['nome_completo']}**")
+    st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
     with st.form(f"form_editar_{colaborador['id']}"):
         novas_datas = {}
+        novos_arquivos_upload = {}
+        
         for _, doc in docs_colab.iterrows():
             val_atual = dt.date.today()
             try:
@@ -283,21 +289,41 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
             except Exception:
                 pass
                 
+            st.markdown(f"**{doc['tipo_documento']}**")
             novas_datas[doc["tipo_documento_id"]] = st.date_input(
-                f"Nova validade para {doc['tipo_documento']}",
-                value=val_atual
+                f"Validade ({doc['tipo_documento']})",
+                value=val_atual,
+                key=f"date_edit_{colaborador['id']}_{doc['tipo_documento_id']}",
+                label_visibility="collapsed"
             )
+            novos_arquivos_upload[doc["tipo_documento_id"]] = st.file_uploader(
+                f"Anexar arquivo ({doc['tipo_documento']})",
+                type=["pdf", "png", "jpg", "jpeg"],
+                key=f"file_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
+            )
+            st.markdown("---")
             
-        salvar_edicao = st.form_submit_button("💾 Salvar Alterações de Prazos", use_container_width=True)
+        salvar_edicao = st.form_submit_button("💾 Salvar Alterações", use_container_width=True)
         
         if salvar_edicao:
             try:
                 for tipo_id, nova_data in novas_datas.items():
-                    conn.table("compliance_documentos").update({
-                        "data_validade": str(nova_data)
-                    }).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    dados_update = {"data_validade": str(nova_data)}
                     
-                st.success("✨ Prazos atualizados com sucesso!")
+                    arq = novos_arquivos_upload.get(tipo_id)
+                    if arq is not None and conn is not None:
+                        file_path = f"colab_{colaborador['id']}_tipo_{tipo_id}_{arq.name}"
+                        conn.storage.from_("documentos_sst").upload(
+                            file_path,
+                            arq.getvalue(),
+                            file_options={"upsert": "true"}
+                        )
+                        public_url = conn.storage.from_("documentos_sst").get_public_url(file_path)
+                        dados_update["arquivo_url"] = public_url
+
+                    conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    
+                st.success("✨ Prazos e anexos atualizados com sucesso!")
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
@@ -527,7 +553,7 @@ with aba_principal:
 
     st.write("")
 
-    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E AÇÕES)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
         pivot_status = doc_df.pivot_table(
@@ -572,6 +598,8 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no link <b>[📎 Ver]</b> ao lado da data na tabela para abrir o documento anexado instantaneamente.</div>", unsafe_allow_html=True)
+
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
             use_container_width=True,
@@ -581,6 +609,10 @@ with aba_principal:
                 "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
                 "CPF": st.column_config.TextColumn("CPF", width="small"),
                 "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
+                "Ficha Admissão": st.column_config.LinkColumn("Ficha Admissão"),
+                "ASO": st.column_config.LinkColumn("ASO"),
+                "Ficha de EPI": st.column_config.LinkColumn("Ficha de EPI"),
+                "Certificado NR06": st.column_config.LinkColumn("Certificado NR06"),
             }
         )
     else:
@@ -593,11 +625,11 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO
+# ABA 2: TELA DE CADASTRO COM UPLOAD DIRETO DO COMPUTADOR
 # ============================================================================
 with aba_cadastro:
-    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E VALIDADES DE SST</div>', unsafe_allow_html=True)
-    st.info("💡 Informe os dados do colaborador, selecione o setor (**TJ** ou **CEAGESP**) e defina a data de validade de cada documento.")
+    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E ANEXO DE LAUDOS SST</div>', unsafe_allow_html=True)
+    st.info("💡 Informe os dados, defina os prazos de validade e clique no botão de anexo para selecionar os arquivos PDF ou imagens direto do seu computador.")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
@@ -610,27 +642,39 @@ with aba_cadastro:
             setor = st.selectbox("Setor / Local de Trabalho", SETORES)
         
         foto_url_input = st.text_input(
-            "Link da Foto do Colaborador (Opcional - ex: URL da web ou deixe em branco)",
+            "Link da Foto do Colaborador (Opcional)",
             value=""
         )
         
         st.markdown("---")
-        st.subheader("Prazos de Validade dos Documentos Obrigatórios")
+        st.subheader("Validade e Upload de Documentos Obrigatórios")
+        
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         
         with d_col1:
-            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31))
+            st.markdown("**ASO**")
+            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31), label_visibility="collapsed")
+            file_aso = st.file_uploader("Selecionar ASO", type=["pdf", "png", "jpg", "jpeg"], key="up_aso")
+            
         with d_col2:
-            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31))
+            st.markdown("**Ficha Admissão**")
+            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31), label_visibility="collapsed")
+            file_adm = st.file_uploader("Selecionar Admissão", type=["pdf", "png", "jpg", "jpeg"], key="up_adm")
+            
         with d_col3:
-            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31))
+            st.markdown("**Ficha de EPI**")
+            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31), label_visibility="collapsed")
+            file_epi = st.file_uploader("Selecionar EPI", type=["pdf", "png", "jpg", "jpeg"], key="up_epi")
+            
         with d_col4:
-            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31))
+            st.markdown("**Certificado NR06**")
+            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31), label_visibility="collapsed")
+            file_nr06 = st.file_uploader("Selecionar NR06", type=["pdf", "png", "jpg", "jpeg"], key="up_nr06")
         
         st.write("")
         b_salvar, _ = st.columns([2, 8])
         with b_salvar:
-            enviar = st.form_submit_button("💾 Salvar com Prazos", use_container_width=True)
+            enviar = st.form_submit_button("💾 Salvar Colaborador e Anexos", use_container_width=True)
         
         if enviar:
             if nome and cpf:
@@ -647,21 +691,38 @@ with aba_cadastro:
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
                         
+                        def salvar_arquivo_storage(arq, tipo_id):
+                            if arq is not None:
+                                file_path = f"colab_{novo_id}_tipo_{tipo_id}_{arq.name}"
+                                conn.storage.from_("documentos_sst").upload(
+                                    file_path,
+                                    arq.getvalue(),
+                                    file_options={"upsert": "true"}
+                                )
+                                return conn.storage.from_("documentos_sst").get_public_url(file_path)
+                            return None
+
+                        url_aso = salvar_arquivo_storage(file_aso, 2)
+                        url_adm = salvar_arquivo_storage(file_adm, 1)
+                        url_epi = salvar_arquivo_storage(file_epi, 3)
+                        url_nr06 = salvar_arquivo_storage(file_nr06, 4)
+
                         docs_para_inserir = [
-                            (1, str(data_ficha_adm)),
-                            (2, str(data_aso)),
-                            (3, str(data_epi)),
-                            (4, str(data_nr06))
+                            (1, str(data_ficha_adm), url_adm),
+                            (2, str(data_aso), url_aso),
+                            (3, str(data_epi), url_epi),
+                            (4, str(data_nr06), url_nr06)
                         ]
                         
-                        for tipo_id, val_data in docs_para_inserir:
+                        for tipo_id, val_data, url_doc in docs_para_inserir:
                             conn.table("compliance_documentos").insert({
                                 "colaborador_id": novo_id,
                                 "tipo_documento_id": tipo_id,
-                                "data_validade": val_data
+                                "data_validade": val_data,
+                                "arquivo_url": url_doc
                             }).execute()
                             
-                        st.success("✨ Colaborador e prazos cadastrados com sucesso no Supabase! Retorne à aba do Dashboard.")
+                        st.success("✨ Colaborador, prazos e documentos anexados com sucesso no Supabase! Retorne à aba do Dashboard.")
                         st.cache_data.clear()
                     except Exception as e:
                         st.error(f"Erro ao salvar no banco: {e}")
