@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard Streamlit conectado ao Supabase com navegação por abas.
+Dashboard Streamlit conectado ao Supabase com controle de prazos por data.
 """
 
 import datetime as dt
@@ -155,15 +155,34 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
-def mapear_status_grupo(status_bruto: str) -> str:
-    if not isinstance(status_bruto, str):
-        return "Regular"
-    s = status_bruto.strip().lower()
-    if "vencido" in s or "🛑" in s:
-        return "Vencido"
-    elif "vence" in s or "⚠️" in s:
-        return "Vence em Breve"
-    return "Regular"
+# Função mágica que calcula o status baseado na DATA DE VALIDADE real
+def calcular_status_por_data(data_val):
+    if not data_val or pd.isna(data_val):
+        return "Regular", "✔️ Sem Data"
+    
+    try:
+        if isinstance(data_val, str):
+            dt_val = dt.datetime.strptime(data_val.strip()[:10], "%Y-%m-%d").date()
+        elif isinstance(data_val, dt.datetime):
+            dt_val = data_val.date()
+        elif isinstance(data_val, dt.date):
+            dt_val = data_val
+        else:
+            return "Regular", "✔️ Em Dia"
+    except Exception:
+        return "Regular", "✔️ Em Dia"
+
+    hoje = dt.date.today()
+    dias_restantes = (dt_val - hoje).days
+
+    data_formatada = dt_val.strftime('%d/%m/%Y')
+
+    if dias_restantes < 0:
+        return "Vencido", f"🛑 Vencido ({data_formatada})"
+    elif 0 <= dias_restantes <= 30:
+        return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
+    else:
+        return "Regular", f"✔️ {data_formatada}"
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -177,7 +196,7 @@ def carregar_dados_supabase(_conn):
         tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
         doc_resp = _conn.table("compliance_documentos").select(
-            "id, colaborador_id, tipo_documento_id, status_documento"
+            "id, colaborador_id, tipo_documento_id, data_validade"
         ).execute()
 
         func_df = pd.DataFrame(func_resp.data)
@@ -188,19 +207,10 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        def formatar_status_visual(val):
-            if not isinstance(val, str):
-                return "✔️ Em Dia"
-            v = val.strip().lower()
-            if "dia" in v:
-                return "✔️ Em Dia"
-            elif "vencido" in v:
-                return "🛑 Vencido"
-            else:
-                return f"⚠️ {val}"
-
-        doc_df["status_detalhado"] = doc_df["status_documento"].apply(formatar_status_visual)
-        doc_df["status_grupo"] = doc_df["status_documento"].apply(mapear_status_grupo)
+        # Aplicando o calculo automático para cada documento com base na data
+        status_calculados = doc_df["data_validade"].apply(calcular_status_por_data)
+        doc_df["status_grupo"] = [s[0] for s in status_calculados]
+        doc_df["status_detalhado"] = [s[1] for s in status_calculados]
         
         return func_df, doc_df
     except Exception:
@@ -440,8 +450,8 @@ with aba_principal:
 
     st.write("")
 
-    # Tabela Interativa de Visão Geral
-    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR</div>', unsafe_allow_html=True)
+    # Tabela Interativa de Visão Geral com Prazos em Datas reais
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E VALIDADES)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
         pivot_status = doc_df.pivot_table(
@@ -487,17 +497,17 @@ with aba_principal:
         st.warning("⚠️ Nenhum registro encontrado.")
 
     st.caption(
-        f"Exibindo dados reais do Supabase · Última atualização: "
+        f"Exibindo dados reais de prazos do Supabase · Última atualização: "
         f"{dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"
     )
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO COM OPÇÃO DE LINK DE FOTO PERSONALIZADA
+# ABA 2: TELA DE CADASTRO COM SELEÇÃO DE DATAS DE VALIDADE
 # ============================================================================
 with aba_cadastro:
-    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E DOCUMENTAÇÃO SST</div>', unsafe_allow_html=True)
-    st.info("💡 Preencha as informações do novo colaborador, defina o link de uma foto personalizada (opcional) e salve diretamente no Supabase.")
+    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E VALIDADES DE SST</div>', unsafe_allow_html=True)
+    st.info("💡 Informe os dados do colaborador e defina a **Data de Validade** exata de cada documento. O sistema calcula automaticamente se está em dia ou vencido!")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
@@ -510,26 +520,28 @@ with aba_cadastro:
             setor = st.selectbox("Setor / Local de Trabalho", SETORES)
         
         foto_url_input = st.text_input(
-            "Link da Foto do Colaborador (Opcional - ex: URL de imagem da web ou deixe em branco)",
+            "Link da Foto do Colaborador (Opcional - ex: URL da web ou deixe em branco)",
             value=""
         )
         
         st.markdown("---")
-        st.subheader("Status Inicial dos Documentos Obrigatórios")
+        st.subheader("Prazos de Validade dos Documentos Obrigatórios")
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+        
+        # Seletores de Data interativos para cada documento
         with d_col1:
-            status_aso = st.selectbox("ASO", ["Em Dia", "Vencido", "Vence em Breve"])
+            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31))
         with d_col2:
-            status_ficha_adm = st.selectbox("Ficha Admissão", ["Em Dia", "Vencido", "Vence em Breve"])
+            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31))
         with d_col3:
-            status_epi = st.selectbox("Ficha de EPI", ["Em Dia", "Vencido", "Vence em Breve"])
+            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31))
         with d_col4:
-            status_nr06 = st.selectbox("Certificado NR06", ["Em Dia", "Vencido", "Vence em Breve"])
+            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31))
         
         st.write("")
         b_salvar, _ = st.columns([2, 8])
         with b_salvar:
-            enviar = st.form_submit_button("💾 Salvar Registro", use_container_width=True)
+            enviar = st.form_submit_button("💾 Salvar com Prazos", use_container_width=True)
         
         if enviar:
             if nome and cpf:
@@ -546,21 +558,22 @@ with aba_cadastro:
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
                         
+                        # Inserindo as datas reais no banco de dados
                         docs_para_inserir = [
-                            (1, status_ficha_adm),
-                            (2, status_aso),
-                            (3, status_epi),
-                            (4, status_nr06)
+                            (1, str(data_ficha_adm)),
+                            (2, str(data_aso)),
+                            (3, str(data_epi)),
+                            (4, str(data_nr06))
                         ]
                         
-                        for tipo_id, status_val in docs_para_inserir:
+                        for tipo_id, val_data in docs_para_inserir:
                             conn.table("compliance_documentos").insert({
                                 "colaborador_id": novo_id,
                                 "tipo_documento_id": tipo_id,
-                                "status_documento": status_val
+                                "data_validade": val_data
                             }).execute()
                             
-                        st.success("✨ Colaborador cadastrado com sucesso no Supabase! Retorne à aba do Dashboard para visualizar os dados atualizados.")
+                        st.success("✨ Colaborador e prazos cadastrados com sucesso no Supabase! Retorne à aba do Dashboard.")
                         st.cache_data.clear()
                     except Exception as e:
                         st.error(f"Erro ao salvar no banco: {e}")
