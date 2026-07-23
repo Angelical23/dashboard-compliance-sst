@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com upload e anexos de documentos SST.
+Dashboard corporativo com upload via cliente oficial do Supabase.
 """
 
 import datetime as dt
@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from supabase import create_client
 
 try:
     from st_supabase_connection import SupabaseConnection
@@ -162,6 +163,17 @@ def get_connection():
         return None
 
 
+# Cliente oficial para lidar com o Storage (lê as credenciais do secrets.toml)
+@st.cache_resource(show_spinner=False)
+def get_supabase_client():
+    try:
+        url = st.secrets["connections"]["supabase"]["supabase_url"]
+        key = st.secrets["connections"]["supabase"]["supabase_key"]
+        return create_client(url, key)
+    except Exception:
+        return None
+
+
 TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
@@ -235,10 +247,39 @@ def carregar_dados_supabase(_conn):
 
 
 conn = get_connection()
+supabase_client = get_supabase_client()
 if conn is not None:
     func_df, doc_df = carregar_dados_supabase(conn)
 else:
     func_df, doc_df = pd.DataFrame(), pd.DataFrame()
+
+
+# Função para enviar arquivo ao Storage do Supabase
+def fazer_upload_storage(arq, colaborador_id, tipo_id):
+    if arq is not None and supabase_client is not None:
+        try:
+            file_path = f"colab_{colaborador_id}_tipo_{tipo_id}_{arq.name}"
+            
+            # Remove arquivo anterior se já existir para evitar conflito
+            try:
+                supabase_client.storage.from_("documentos_sst").remove([file_path])
+            except Exception:
+                pass
+
+            # Faz o upload dos bytes do arquivo
+            supabase_client.storage.from_("documentos_sst").upload(
+                file_path,
+                arq.getvalue(),
+                file_options={"content-type": arq.type}
+            )
+            
+            # Retorna a URL pública do arquivo
+            public_url = supabase_client.storage.from_("documentos_sst").get_public_url(file_path)
+            return public_url
+        except Exception as e:
+            st.error(f"Erro no upload do arquivo: {e}")
+            return None
+    return None
 
 
 # ----------------------------------------------------------------------------
@@ -311,15 +352,10 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
                     dados_update = {"data_validade": str(nova_data)}
                     
                     arq = novos_arquivos_upload.get(tipo_id)
-                    if arq is not None and conn is not None:
-                        file_path = f"colab_{colaborador['id']}_tipo_{tipo_id}_{arq.name}"
-                        conn.storage.from_("documentos_sst").upload(
-                            file_path,
-                            arq.getvalue(),
-                            file_options={"upsert": "true"}
-                        )
-                        public_url = conn.storage.from_("documentos_sst").get_public_url(file_path)
-                        dados_update["arquivo_url"] = public_url
+                    if arq is not None:
+                        url_arquivo = fazer_upload_storage(arq, colaborador["id"], tipo_id)
+                        if url_arquivo:
+                            dados_update["arquivo_url"] = url_arquivo
 
                     conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
                     
@@ -625,7 +661,7 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO COM UPLOAD DIRETO DO COMPUTADOR
+# ABA 2: TELA DE CADASTRO
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E ANEXO DE LAUDOS SST</div>', unsafe_allow_html=True)
@@ -690,22 +726,11 @@ with aba_cadastro:
                         }).execute()
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
-                        
-                        def salvar_arquivo_storage(arq, tipo_id):
-                            if arq is not None:
-                                file_path = f"colab_{novo_id}_tipo_{tipo_id}_{arq.name}"
-                                conn.storage.from_("documentos_sst").upload(
-                                    file_path,
-                                    arq.getvalue(),
-                                    file_options={"upsert": "true"}
-                                )
-                                return conn.storage.from_("documentos_sst").get_public_url(file_path)
-                            return None
 
-                        url_aso = salvar_arquivo_storage(file_aso, 2)
-                        url_adm = salvar_arquivo_storage(file_adm, 1)
-                        url_epi = salvar_arquivo_storage(file_epi, 3)
-                        url_nr06 = salvar_arquivo_storage(file_nr06, 4)
+                        url_aso = fazer_upload_storage(file_aso, novo_id, 2)
+                        url_adm = fazer_upload_storage(file_adm, novo_id, 1)
+                        url_epi = fazer_upload_storage(file_epi, novo_id, 3)
+                        url_nr06 = fazer_upload_storage(file_nr06, novo_id, 4)
 
                         docs_para_inserir = [
                             (1, str(data_ficha_adm), url_adm),
