@@ -155,7 +155,7 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
 
 
-# Função mágica que calcula o status baseado na DATA DE VALIDADE real
+# Função que calcula o status baseado na DATA DE VALIDADE real
 def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val):
         return "Regular", "✔️ Sem Data"
@@ -528,7 +528,6 @@ with aba_cadastro:
         st.subheader("Prazos de Validade dos Documentos Obrigatórios")
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         
-        # Seletores de Data interativos para cada documento
         with d_col1:
             data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31))
         with d_col2:
@@ -549,6 +548,7 @@ with aba_cadastro:
                     try:
                         foto_final = foto_url_input.strip() if foto_url_input and foto_url_input.startswith("http") else f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
                         
+                        # Inserção segura gerenciada automaticamente pelo Supabase
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
                             "cpf": cpf,
@@ -556,9 +556,9 @@ with aba_cadastro:
                             "foto_url": foto_final
                         }).execute()
                         
-                        novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[0]["id"]
+                        # Resgata o ID gerado para o colaborador recém-criado
+                        novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
                         
-                        # Inserindo as datas reais no banco de dados
                         docs_para_inserir = [
                             (1, str(data_ficha_adm)),
                             (2, str(data_aso)),
