@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard Streamlit conectado ao Supabase com ações de Visualizar e Editar Prazos.
+Dashboard corporativo com design moderno focado em SST.
 """
 
 import datetime as dt
@@ -29,7 +29,7 @@ st.set_page_config(
 )
 
 # ----------------------------------------------------------------------------
-# ESTILO GLOBAL (CSS)
+# ESTILO GLOBAL (MODERN DESIGN CORPORATIVO SST)
 # ----------------------------------------------------------------------------
 st.markdown(
     """
@@ -38,58 +38,71 @@ st.markdown(
         footer {visibility: hidden;}
         header[data-testid="stHeader"] {background: transparent;}
 
+        /* Fundo geral da aplicação com cinza corporativo suave */
+        .stApp {
+            background-color: #F4F6F9;
+        }
+
         .block-container {
-            padding-top: 1rem;
-            padding-bottom: 2rem;
+            padding-top: 1.2rem;
+            padding-bottom: 2.5rem;
             max-width: 1400px;
         }
 
+        /* Barra de Título Superior Moderna */
         .main-header-bar {
-            background: linear-gradient(90deg, #0B2545 0%, #13315C 100%);
-            border-radius: 12px;
-            padding: 16px 24px;
+            background: linear-gradient(135deg, #0A2540 0%, #1E3A8A 100%);
+            border-radius: 14px;
+            padding: 18px 26px;
             color: #FFFFFF;
-            font-size: 20px;
+            font-size: 21px;
             font-weight: 700;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 14px rgba(11, 37, 69, 0.2);
-            letter-spacing: 0.3px;
+            margin-bottom: 22px;
+            box-shadow: 0 4px 16px rgba(10, 37, 64, 0.15);
+            letter-spacing: 0.4px;
         }
 
+        /* Container do Perfil */
         .sub-header-container {
             background: #FFFFFF;
-            border: 1px solid #ECECEC;
-            border-radius: 12px;
-            padding: 14px 20px;
+            border: 1px solid #E2E8F0;
+            border-radius: 14px;
+            padding: 14px 22px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 22px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+            margin-bottom: 24px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.02);
         }
         .profile-name {
-            color: #17202A;
+            color: #0F172A;
             font-size: 16px;
             font-weight: 700;
             margin: 0;
-            line-height: 1.1;
+            line-height: 1.2;
         }
         .profile-role {
-            color: #5B6470;
+            color: #64748B;
             font-size: 13px;
             margin: 0;
         }
 
+        /* Cards de Métricas Estilo SaaS / Dashboard Profissional */
         .metric-card {
             border-radius: 14px;
-            padding: 18px 20px;
+            padding: 20px;
             background: #FFFFFF;
-            border: 1px solid #ECECEC;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            height: 128px;
+            border: 1px solid #E2E8F0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            height: 130px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.06);
         }
         .metric-card .m-header {
             display: flex;
@@ -98,7 +111,7 @@ st.markdown(
         }
         .metric-card .m-label {
             font-size: 13px;
-            color: #5B6470;
+            color: #64748B;
             font-weight: 600;
         }
         .metric-card .m-icon {
@@ -107,34 +120,37 @@ st.markdown(
         .metric-card .m-value {
             font-size: 30px;
             font-weight: 800;
-            color: #17202A;
+            color: #0F172A;
         }
         .metric-card .m-sub {
             font-size: 12.5px;
             font-weight: 600;
         }
-        .metric-card.neutral { background: #F7F9FC; border-color: #E5EAF2; }
-        .metric-card.green   { background: #EAF7EF; border-color: #C9EBD7; }
-        .metric-card.yellow  { background: #FEF7E3; border-color: #F7E5AE; }
-        .metric-card.red     { background: #FCEBEA; border-color: #F5C6C3; }
-        .metric-card.neutral .m-value { color: #13315C; }
-        .metric-card.green   .m-value,  .metric-card.green   .m-sub { color: #1E7B45; }
-        .metric-card.yellow  .m-value,  .metric-card.yellow  .m-sub { color: #9A6B00; }
-        .metric-card.red     .m-value,  .metric-card.red     .m-sub { color: #B3261E; }
+        
+        /* Variações de cores dos cards */
+        .metric-card.neutral { border-left: 4px solid #3B82F6; }
+        .metric-card.green   { border-left: 4px solid #10B981; background: #F0FDF4; }
+        .metric-card.yellow  { border-left: 4px solid #F59E0B; background: #FFFBEB; }
+        .metric-card.red     { border-left: 4px solid #EF4444; background: #FEF2F2; }
+
+        .metric-card.neutral .m-value { color: #1E40AF; }
+        .metric-card.green   .m-value, .metric-card.green   .m-sub { color: #047857; }
+        .metric-card.yellow  .m-value, .metric-card.yellow  .m-sub { color: #B45309; }
+        .metric-card.red     .m-value, .metric-card.red     .m-sub { color: #B91C1C; }
 
         .section-title {
             font-size: 16px;
             font-weight: 700;
-            color: #17202A;
-            margin: 6px 0 10px 2px;
+            color: #0F172A;
+            margin: 8px 0 12px 2px;
         }
 
         .chart-card {
             background: #FFFFFF;
-            border: 1px solid #ECECEC;
+            border: 1px solid #E2E8F0;
             border-radius: 14px;
-            padding: 16px 18px 4px 18px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            padding: 18px 20px 6px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }
     </style>
     """,
@@ -222,7 +238,7 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL 1: VISUALIZAR DETALHES DO COLABORADOR
+# MODAL 1: VISUALIZAR DETALHES
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
@@ -250,7 +266,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS DE DOCUMENTOS
+# MODAL 2: EDITAR PRAZOS
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos de Validade")
 def modal_editar_prazos(conn, colaborador, docs_colab):
@@ -260,7 +276,6 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
     with st.form(f"form_editar_{colaborador['id']}"):
         novas_datas = {}
         for _, doc in docs_colab.iterrows():
-            # Tenta converter a data atual para objeto date
             val_atual = dt.date.today()
             try:
                 if pd.notna(doc["data_validade"]):
@@ -290,7 +305,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 3: GERENCIAR / EXCLUIR REGISTRO
+# MODAL 3: GERENCIAR / EXCLUIR
 # ----------------------------------------------------------------------------
 @st.dialog("Gerenciar Registro do Colaborador")
 def modal_gerenciar_colaborador(conn, colaborador):
@@ -310,7 +325,7 @@ def modal_gerenciar_colaborador(conn, colaborador):
 
 
 # ----------------------------------------------------------------------------
-# NAVEGAÇÃO POR ABAS SUPERIORES
+# NAVEGAÇÃO POR ABAS
 # ----------------------------------------------------------------------------
 aba_principal, aba_cadastro = st.tabs(["📊 Dashboard de Compliance", "➕ Cadastrar Novo Colaborador"])
 
@@ -437,7 +452,7 @@ with aba_principal:
     st.write("")
 
     graf_esq, graf_dir = st.columns([6, 4])
-    CORES = {"Regular": "#2E6FE0", "Vence em Breve": "#F4C430", "Vencido": "#E5484D"}
+    CORES = {"Regular": "#2563EB", "Vence em Breve": "#F59E0B", "Vencido": "#EF4444"}
 
     with graf_esq:
         st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -475,7 +490,7 @@ with aba_principal:
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
         )
-        fig_bar.update_yaxes(gridcolor="#EEF0F3")
+        fig_bar.update_yaxes(gridcolor="#E2E8F0")
         st.plotly_chart(fig_bar, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -496,7 +511,7 @@ with aba_principal:
                     labels=pendentes_por_tipo["tipo_documento"],
                     values=pendentes_por_tipo["quantidade"],
                     hole=0.55,
-                    marker=dict(colors=["#2E6FE0", "#F4C430", "#E5484D", "#8E6FF4"]),
+                    marker=dict(colors=["#2563EB", "#F59E0B", "#EF4444", "#8B5CF6"]),
                     textinfo="percent",
                 )
             ]
@@ -527,7 +542,6 @@ with aba_principal:
         tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
         tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 
-        # Seletor principal e botões de Ação interativos na tela
         col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
         
         with col_sel:
