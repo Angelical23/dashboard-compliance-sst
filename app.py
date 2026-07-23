@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com links de anexos corrigidos.
+Dashboard corporativo com links e anexos corretos.
 """
 
 import datetime as dt
@@ -177,9 +177,10 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_por_data(data_val):
+def calcular_status_por_data(data_val, arquivo_url):
     if not data_val or pd.isna(data_val):
-        return "Regular", "✔️ Sem Data"
+        status_txt = "✔️ Sem Data"
+        grupo = "Regular"
     else:
         try:
             if isinstance(data_val, str):
@@ -187,6 +188,8 @@ def calcular_status_por_data(data_val):
             elif isinstance(data_val, dt.datetime):
                 dt_val = data_val.date()
             elif isinstance(data_val, dt.date):
+                dt_val = data_val
+            else:
                 dt_val = dt.date.today()
         except Exception:
             dt_val = dt.date.today()
@@ -196,11 +199,20 @@ def calcular_status_por_data(data_val):
         data_formatada = dt_val.strftime('%d/%m/%Y')
 
         if dias_restantes < 0:
-            return "Vencido", f"🛑 Vencido ({data_formatada})"
+            grupo = "Vencido"
+            status_txt = f"🛑 Vencido ({data_formatada})"
         elif 0 <= dias_restantes <= 30:
-            return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
+            grupo = "Vence em Breve"
+            status_txt = f"⚠️ Vence em {data_formatada}"
         else:
-            return "Regular", f"✔️ {data_formatada}"
+            grupo = "Regular"
+            status_txt = f"✔️ {data_formatada}"
+
+    # Se houver arquivo anexado, adiciona o link Markdown de visualização
+    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
+        status_txt += f" [📎 Ver]({arquivo_url})"
+
+    return grupo, status_txt
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -225,20 +237,9 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        # Calcula status e separa a URL do arquivo de forma limpa
-        status_grup = []
-        status_det = []
-        urls_lista = []
-        
-        for _, r in doc_df.iterrows():
-            g, s = calcular_status_por_data(r["data_validade"])
-            status_grup.append(g)
-            status_det.append(s)
-            urls_lista.append(r.get("arquivo_url", ""))
-            
-        doc_df["status_grupo"] = status_grup
-        doc_df["status_detalhado"] = status_det
-        doc_df["arquivo_url_limpa"] = urls_lista
+        status_calculados = doc_df.apply(lambda r: calcular_status_por_data(r["data_validade"], r.get("arquivo_url")), axis=1)
+        doc_df["status_grupo"] = [s[0] for s in status_calculados]
+        doc_df["status_detalhado"] = [s[1] for s in status_calculados]
         
         return func_df, doc_df
     except Exception:
@@ -297,9 +298,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
     st.subheader("Documentos e Anexos")
     
     for _, doc in docs_colab.iterrows():
-        url_arq = doc.get("arquivo_url_limpa")
-        anexo_txt = f" - [📎 Ver Documento]({url_arq})" if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "" else ""
-        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{anexo_txt}")
+        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}")
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -588,18 +587,10 @@ with aba_principal:
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
-        # Monta a tabela unindo status e URLs separadamente para exibir links reais
         pivot_status = doc_df.pivot_table(
             index="colaborador_id",
             columns="tipo_documento",
             values="status_detalhado",
-            aggfunc="first",
-        ).reindex(columns=TIPOS_DOCUMENTO)
-
-        pivot_url = doc_df.pivot_table(
-            index="colaborador_id",
-            columns="tipo_documento",
-            values="arquivo_url_limpa",
             aggfunc="first",
         ).reindex(columns=TIPOS_DOCUMENTO)
 
@@ -638,27 +629,10 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Se houver anexo, a própria linha da tabela mostrará o link direto para visualização. Além disso, ao clicar em <b>Visualizar</b> você verá todos os links organizados.</div>", unsafe_allow_html=True)
-
-        # Prepara o dataframe para exibir links reais ou textos comuns
-        tabela_final = tabela_exibicao.drop(columns=["ID"]).copy()
-        
-        for tipo in TIPOS_DOCUMENTO:
-            if tipo in pivot_url.columns:
-                def get_link_ou_texto(row_idx, col_nome):
-                    try:
-                        # Busca o ID do colaborador desta linha
-                        orig_id = tabela.iloc[row_idx]["id"]
-                        url = pivot_url.loc[orig_id, col_nome]
-                        status_texto = pivot_status.loc[orig_id, col_nome]
-                        if url and pd.notna(url) and str(url).strip() != "":
-                            return url  # Streamlit LinkColumn aceita a URL direta
-                        return None
-                    except Exception:
-                        return None
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para ver os links de todos os documentos anexados organizados em formato de lista.</div>", unsafe_allow_html=True)
 
         st.dataframe(
-            tabela_final,
+            tabela_exibicao.drop(columns=["ID"]),
             use_container_width=True,
             hide_index=True,
             height=380,
@@ -666,10 +640,6 @@ with aba_principal:
                 "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
                 "CPF": st.column_config.TextColumn("CPF", width="small"),
                 "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
-                "Ficha Admissão": st.column_config.TextColumn("Ficha Admissão"),
-                "ASO": st.column_config.TextColumn("ASO"),
-                "Ficha de EPI": st.column_config.TextColumn("Ficha de EPI"),
-                "Certificado NR06": st.column_config.TextColumn("Certificado NR06"),
             }
         )
     else:
