@@ -152,7 +152,7 @@ def get_connection():
 
 
 TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
-SETORES = ["Production", "Logistics", "Maintenance", "Administration"]
+SETORES = ["TJ", "CEAGESP"]
 
 
 # Função que calcula o status baseado na DATA DE VALIDADE real
@@ -207,7 +207,6 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        # Aplicando o calculo automático para cada documento com base na data
         status_calculados = doc_df["data_validade"].apply(calcular_status_por_data)
         doc_df["status_grupo"] = [s[0] for s in status_calculados]
         doc_df["status_detalhado"] = [s[1] for s in status_calculados]
@@ -259,7 +258,6 @@ with aba_principal:
         unsafe_allow_html=True
     )
 
-    # Bloco do perfil com foto local (angelica.png)
     st.markdown('<div class="sub-header-container">', unsafe_allow_html=True)
     col_img, col_txt, col_date = st.columns([1, 8, 4])
     
@@ -290,7 +288,6 @@ with aba_principal:
 
     st.write("")
 
-    # Métricas
     total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
     total_documentos = len(doc_df)
 
@@ -373,7 +370,6 @@ with aba_principal:
 
     st.write("")
 
-    # Gráficos
     graf_esq, graf_dir = st.columns([6, 4])
     CORES = {"Regular": "#2E6FE0", "Vence em Breve": "#F4C430", "Vencido": "#E5484D"}
 
@@ -450,7 +446,6 @@ with aba_principal:
 
     st.write("")
 
-    # Tabela Interativa de Visão Geral com Prazos em Datas reais
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E VALIDADES)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
@@ -503,11 +498,11 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO COM SELEÇÃO DE DATAS DE VALIDADE
+# ABA 2: TELA DE CADASTRO COM SETORES ATUALIZADOS
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E VALIDADES DE SST</div>', unsafe_allow_html=True)
-    st.info("💡 Informe os dados do colaborador e defina a **Data de Validade** exata de cada documento. O sistema calcula automaticamente se está em dia ou vencido!")
+    st.info("💡 Informe os dados do colaborador, selecione o setor (**TJ** ou **CEAGESP**) e defina a data de validade de cada documento.")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
@@ -548,7 +543,6 @@ with aba_cadastro:
                     try:
                         foto_final = foto_url_input.strip() if foto_url_input and foto_url_input.startswith("http") else f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
                         
-                        # Inserção segura gerenciada automaticamente pelo Supabase
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
                             "cpf": cpf,
@@ -556,7 +550,6 @@ with aba_cadastro:
                             "foto_url": foto_final
                         }).execute()
                         
-                        # Resgata o ID gerado para o colaborador recém-criado
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
                         
                         docs_para_inserir = [
