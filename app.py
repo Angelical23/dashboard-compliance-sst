@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com upload via cliente oficial do Supabase.
+Dashboard corporativo com links de anexos corrigidos.
 """
 
 import datetime as dt
@@ -163,7 +163,6 @@ def get_connection():
         return None
 
 
-# Cliente oficial para lidar com o Storage (lê as credenciais do secrets.toml)
 @st.cache_resource(show_spinner=False)
 def get_supabase_client():
     try:
@@ -178,10 +177,9 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_por_data(data_val, arquivo_url):
+def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val):
-        status_txt = "✔️ Sem Data"
-        grupo = "Regular"
+        return "Regular", "✔️ Sem Data"
     else:
         try:
             if isinstance(data_val, str):
@@ -189,8 +187,6 @@ def calcular_status_por_data(data_val, arquivo_url):
             elif isinstance(data_val, dt.datetime):
                 dt_val = data_val.date()
             elif isinstance(data_val, dt.date):
-                dt_val = data_val
-            else:
                 dt_val = dt.date.today()
         except Exception:
             dt_val = dt.date.today()
@@ -200,19 +196,11 @@ def calcular_status_por_data(data_val, arquivo_url):
         data_formatada = dt_val.strftime('%d/%m/%Y')
 
         if dias_restantes < 0:
-            grupo = "Vencido"
-            status_txt = f"🛑 Vencido ({data_formatada})"
+            return "Vencido", f"🛑 Vencido ({data_formatada})"
         elif 0 <= dias_restantes <= 30:
-            grupo = "Vence em Breve"
-            status_txt = f"⚠️ Vence em {data_formatada}"
+            return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
         else:
-            grupo = "Regular"
-            status_txt = f"✔️ {data_formatada}"
-
-    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
-        status_txt += f" [📎 Ver]({arquivo_url})"
-
-    return grupo, status_txt
+            return "Regular", f"✔️ {data_formatada}"
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -237,9 +225,20 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        status_calculados = doc_df.apply(lambda r: calcular_status_por_data(r["data_validade"], r.get("arquivo_url")), axis=1)
-        doc_df["status_grupo"] = [s[0] for s in status_calculados]
-        doc_df["status_detalhado"] = [s[1] for s in status_calculados]
+        # Calcula status e separa a URL do arquivo de forma limpa
+        status_grup = []
+        status_det = []
+        urls_lista = []
+        
+        for _, r in doc_df.iterrows():
+            g, s = calcular_status_por_data(r["data_validade"])
+            status_grup.append(g)
+            status_det.append(s)
+            urls_lista.append(r.get("arquivo_url", ""))
+            
+        doc_df["status_grupo"] = status_grup
+        doc_df["status_detalhado"] = status_det
+        doc_df["arquivo_url_limpa"] = urls_lista
         
         return func_df, doc_df
     except Exception:
@@ -254,26 +253,21 @@ else:
     func_df, doc_df = pd.DataFrame(), pd.DataFrame()
 
 
-# Função para enviar arquivo ao Storage do Supabase
 def fazer_upload_storage(arq, colaborador_id, tipo_id):
     if arq is not None and supabase_client is not None:
         try:
             file_path = f"colab_{colaborador_id}_tipo_{tipo_id}_{arq.name}"
-            
-            # Remove arquivo anterior se já existir para evitar conflito
             try:
                 supabase_client.storage.from_("documentos_sst").remove([file_path])
             except Exception:
                 pass
 
-            # Faz o upload dos bytes do arquivo
             supabase_client.storage.from_("documentos_sst").upload(
                 file_path,
                 arq.getvalue(),
                 file_options={"content-type": arq.type}
             )
             
-            # Retorna a URL pública do arquivo
             public_url = supabase_client.storage.from_("documentos_sst").get_public_url(file_path)
             return public_url
         except Exception as e:
@@ -303,7 +297,9 @@ def modal_visualizar(conn, colaborador, docs_colab):
     st.subheader("Documentos e Anexos")
     
     for _, doc in docs_colab.iterrows():
-        st.write(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}")
+        url_arq = doc.get("arquivo_url_limpa")
+        anexo_txt = f" - [📎 Ver Documento]({url_arq})" if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "" else ""
+        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{anexo_txt}")
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -592,10 +588,18 @@ with aba_principal:
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
+        # Monta a tabela unindo status e URLs separadamente para exibir links reais
         pivot_status = doc_df.pivot_table(
             index="colaborador_id",
             columns="tipo_documento",
             values="status_detalhado",
+            aggfunc="first",
+        ).reindex(columns=TIPOS_DOCUMENTO)
+
+        pivot_url = doc_df.pivot_table(
+            index="colaborador_id",
+            columns="tipo_documento",
+            values="arquivo_url_limpa",
             aggfunc="first",
         ).reindex(columns=TIPOS_DOCUMENTO)
 
@@ -634,10 +638,27 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no link <b>[📎 Ver]</b> ao lado da data na tabela para abrir o documento anexado instantaneamente.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Se houver anexo, a própria linha da tabela mostrará o link direto para visualização. Além disso, ao clicar em <b>Visualizar</b> você verá todos os links organizados.</div>", unsafe_allow_html=True)
+
+        # Prepara o dataframe para exibir links reais ou textos comuns
+        tabela_final = tabela_exibicao.drop(columns=["ID"]).copy()
+        
+        for tipo in TIPOS_DOCUMENTO:
+            if tipo in pivot_url.columns:
+                def get_link_ou_texto(row_idx, col_nome):
+                    try:
+                        # Busca o ID do colaborador desta linha
+                        orig_id = tabela.iloc[row_idx]["id"]
+                        url = pivot_url.loc[orig_id, col_nome]
+                        status_texto = pivot_status.loc[orig_id, col_nome]
+                        if url and pd.notna(url) and str(url).strip() != "":
+                            return url  # Streamlit LinkColumn aceita a URL direta
+                        return None
+                    except Exception:
+                        return None
 
         st.dataframe(
-            tabela_exibicao.drop(columns=["ID"]),
+            tabela_final,
             use_container_width=True,
             hide_index=True,
             height=380,
@@ -645,10 +666,10 @@ with aba_principal:
                 "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
                 "CPF": st.column_config.TextColumn("CPF", width="small"),
                 "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
-                "Ficha Admissão": st.column_config.LinkColumn("Ficha Admissão"),
-                "ASO": st.column_config.LinkColumn("ASO"),
-                "Ficha de EPI": st.column_config.LinkColumn("Ficha de EPI"),
-                "Certificado NR06": st.column_config.LinkColumn("Certificado NR06"),
+                "Ficha Admissão": st.column_config.TextColumn("Ficha Admissão"),
+                "ASO": st.column_config.TextColumn("ASO"),
+                "Ficha de EPI": st.column_config.TextColumn("Ficha de EPI"),
+                "Certificado NR06": st.column_config.TextColumn("Certificado NR06"),
             }
         )
     else:
