@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard Streamlit conectado ao Supabase com controle de prazos por data.
+Dashboard Streamlit conectado ao Supabase com ações de Visualizar e Editar Prazos.
 """
 
 import datetime as dt
@@ -155,7 +155,6 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-# Função que calcula o status baseado na DATA DE VALIDADE real
 def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val):
         return "Regular", "✔️ Sem Data"
@@ -174,7 +173,6 @@ def calcular_status_por_data(data_val):
 
     hoje = dt.date.today()
     dias_restantes = (dt_val - hoje).days
-
     data_formatada = dt_val.strftime('%d/%m/%Y')
 
     if dias_restantes < 0:
@@ -224,7 +222,75 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL: GERENCIAR / EXCLUIR REGISTRO SELECIONADO
+# MODAL 1: VISUALIZAR DETALHES DO COLABORADOR
+# ----------------------------------------------------------------------------
+@st.dialog("👁️ Detalhes e Prontuário do Colaborador")
+def modal_visualizar(conn, colaborador, docs_colab):
+    col_img, col_info = st.columns([1, 3])
+    with col_img:
+        foto = colaborador.get("foto_url")
+        if foto:
+            st.image(foto, width=100)
+        else:
+            st.image("https://i.pravatar.cc/150?img=32", width=100)
+    with col_info:
+        st.markdown(f"### {colaborador['nome_completo']}")
+        st.write(f"**CPF:** {colaborador['cpf']}")
+        st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
+    
+    st.markdown("---")
+    st.subheader("Histórico de Validade dos Documentos")
+    
+    for _, doc in docs_colab.iterrows():
+        st.write(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}")
+    
+    st.write("")
+    if st.button("Fechar Prontuário", use_container_width=True):
+        st.rerun()
+
+
+# ----------------------------------------------------------------------------
+# MODAL 2: EDITAR PRAZOS DE DOCUMENTOS
+# ----------------------------------------------------------------------------
+@st.dialog("✏️ Atualizar Prazos de Validade")
+def modal_editar_prazos(conn, colaborador, docs_colab):
+    st.write(f"Editando laudos de: **{colaborador['nome_completo']}**")
+    st.markdown("---")
+    
+    with st.form(f"form_editar_{colaborador['id']}"):
+        novas_datas = {}
+        for _, doc in docs_colab.iterrows():
+            # Tenta converter a data atual para objeto date
+            val_atual = dt.date.today()
+            try:
+                if pd.notna(doc["data_validade"]):
+                    val_atual = dt.datetime.strptime(str(doc["data_validade"])[:10], "%Y-%m-%d").date()
+            except Exception:
+                pass
+                
+            novas_datas[doc["tipo_documento_id"]] = st.date_input(
+                f"Nova validade para {doc['tipo_documento']}",
+                value=val_atual
+            )
+            
+        salvar_edicao = st.form_submit_button("💾 Salvar Alterações de Prazos", use_container_width=True)
+        
+        if salvar_edicao:
+            try:
+                for tipo_id, nova_data in novas_datas.items():
+                    conn.table("compliance_documentos").update({
+                        "data_validade": str(nova_data)
+                    }).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    
+                st.success("✨ Prazos atualizados com sucesso!")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao atualizar: {e}")
+
+
+# ----------------------------------------------------------------------------
+# MODAL 3: GERENCIAR / EXCLUIR REGISTRO
 # ----------------------------------------------------------------------------
 @st.dialog("Gerenciar Registro do Colaborador")
 def modal_gerenciar_colaborador(conn, colaborador):
@@ -446,7 +512,7 @@ with aba_principal:
 
     st.write("")
 
-    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E VALIDADES)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E AÇÕES)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
         pivot_status = doc_df.pivot_table(
@@ -460,21 +526,37 @@ with aba_principal:
         
         tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
         tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
-        tabela_exibicao["Ações"] = "👁️  ✏️  🔔"
 
-        col_sel, col_del = st.columns([6, 2])
+        # Seletor principal e botões de Ação interativos na tela
+        col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
+        
         with col_sel:
             coluna_selecao = st.selectbox(
-                "Selecione um colaborador para gerenciar/excluir:",
+                "Selecione um colaborador:",
                 options=tabela_exibicao["ID"].tolist(),
                 format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0],
                 label_visibility="collapsed"
             )
-        with col_del:
-            if st.button("⚙️ Gerenciar Selecionado", use_container_width=True):
+            
+        with col_btn1:
+            if st.button("👁️ Visualizar", use_container_width=True):
                 if coluna_selecao:
-                    colaborador_selecionado = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                    modal_gerenciar_colaborador(conn, colaborador_selecionado)
+                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
+                    modal_visualizar(conn, colaborador_sel, docs_sel)
+                    
+        with col_btn2:
+            if st.button("✏️ Editar Prazos", use_container_width=True):
+                if coluna_selecao:
+                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
+                    modal_editar_prazos(conn, colaborador_sel, docs_sel)
+                    
+        with col_del_btn:
+            if st.button("⚙️ Excluir", use_container_width=True):
+                if coluna_selecao:
+                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    modal_gerenciar_colaborador(conn, colaborador_sel)
 
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
@@ -485,20 +567,19 @@ with aba_principal:
                 "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
                 "CPF": st.column_config.TextColumn("CPF", width="small"),
                 "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
-                "Ações": st.column_config.TextColumn("Ações", width="small"),
             }
         )
     else:
         st.warning("⚠️ Nenhum registro encontrado.")
 
     st.caption(
-        f"Exibindo dados reais de prazos do Supabase · Última atualização: "
+        f"Exibindo dados do Supabase · Última atualização: "
         f"{dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"
     )
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO COM SETORES ATUALIZADOS
+# ABA 2: TELA DE CADASTRO
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E VALIDADES DE SST</div>', unsafe_allow_html=True)
