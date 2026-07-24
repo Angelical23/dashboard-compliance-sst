@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com links visíveis diretamente na tabela principal.
+Dashboard corporativo com links reais clicáveis na tabela principal.
 """
 
 import datetime as dt
@@ -166,21 +166,17 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_e_link(data_val, arquivo_url):
-    # Calcula status por data
+def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val):
-        grupo = "Regular"
-        status_txt = "✔️ Sem Data"
+        return "Regular", "✔️ Sem Data"
     else:
         try:
             if isinstance(data_val, str):
                 dt_val = dt.datetime.strptime(data_val.strip()[:10], "%Y-%m-%d").date()
             elif isinstance(data_val, dt.datetime):
-                dt_val = data_val.date()
+                dt_val = dt_val.date()
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
-            else:
-                dt_val = dt.date.today()
         except Exception:
             dt_val = dt.date.today()
 
@@ -189,20 +185,11 @@ def calcular_status_e_link(data_val, arquivo_url):
         data_formatada = dt_val.strftime('%d/%m/%Y')
 
         if dias_restantes < 0:
-            grupo = "Vencido"
-            status_txt = f"🛑 Vencido ({data_formatada})"
+            return "Vencido", f"🛑 Vencido ({data_formatada})"
         elif 0 <= dias_restantes <= 30:
-            grupo = "Vence em Breve"
-            status_txt = f"⚠️ Vence em {data_formatada}"
+            return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
         else:
-            grupo = "Regular"
-            status_txt = f"✔️ {data_formatada}"
-
-    # Adiciona o link visível se houver URL cadastrada
-    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
-        status_txt += f" | 📎 [Ver]"
-
-    return grupo, status_txt
+            return "Regular", f"✔️ {data_formatada}"
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -231,7 +218,7 @@ def carregar_dados_supabase(_conn):
         status_det = []
         
         for _, r in doc_df.iterrows():
-            g, s = calcular_status_e_link(r["data_validade"], r.get("arquivo_url"))
+            g, s = calcular_status_por_data(r["data_validade"])
             status_grup.append(g)
             status_det.append(s)
             
@@ -565,25 +552,45 @@ with aba_principal:
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
-        pivot_status = doc_df.pivot_table(
-            index="colaborador_id",
-            columns="tipo_documento",
-            values="status_detalhado",
-            aggfunc="first",
-        ).reindex(columns=TIPOS_DOCUMENTO)
+        # Monta um dicionário de mapeamento para injetar links HTML clicáveis direto na tabela
+        mapa_status = {}
+        mapa_urls = {}
+        for _, r in doc_df.iterrows():
+            c_id = r["colaborador_id"]
+            t_doc = r["tipo_documento"]
+            g, s = calcular_status_por_data(r["data_validade"])
+            
+            url = r.get("arquivo_url")
+            if url and pd.notna(url) and str(url).strip() != "":
+                s_final = f"{s} | <a href='{url}' target='_blank'>📎 <b>[Ver]</b></a>"
+            else:
+                s_final = s
+                
+            if c_id not in mapa_status:
+                mapa_status[c_id] = {}
+            mapa_status[c_id][t_doc] = s_final
 
-        tabela = func_df.merge(pivot_status, left_on="id", right_index=True, how="left").sort_values("nome_completo")
-        
-        tabela_exibicao = tabela[["id", "nome_completo", "cpf", "local_trabalho"] + TIPOS_DOCUMENTO].copy()
-        tabela_exibicao.columns = ["ID", "Nome Completo", "CPF", "Local de Trabalho", "Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
+        lista_linhas = []
+        for _, colab in func_df.iterrows():
+            c_id = colab["id"]
+            row_data = {
+                "Nome Completo": colab["nome_completo"],
+                "CPF": colab["cpf"],
+                "Local de Trabalho": colab["local_trabalho"]
+            }
+            for tipo in TIPOS_DOCUMENTO:
+                row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "✔️ Sem Data")
+            lista_linhas.append(row_data)
+
+        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
 
         col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
         
         with col_sel:
             coluna_selecao = st.selectbox(
                 "Selecione um colaborador:",
-                options=tabela_exibicao["ID"].tolist(),
-                format_func=lambda x: tabela_exibicao.loc[tabela_exibicao["ID"] == x, "Nome Completo"].values[0],
+                options=func_df["id"].tolist(),
+                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0],
                 label_visibility="collapsed"
             )
             
@@ -607,18 +614,12 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o símbolo <b>📎 [Ver]</b> aparece diretamente ao lado da data na tabela principal para cada documento que possui link cadastrado!</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o link <b>📎 [Ver]</b> ao lado da data na tabela já abre o documento diretamente em nova aba!</div>", unsafe_allow_html=True)
 
-        st.dataframe(
-            tabela_exibicao.drop(columns=["ID"]),
-            use_container_width=True,
-            hide_index=True,
-            height=380,
-            column_config={
-                "Nome Completo": st.column_config.TextColumn("Nome Completo", width="medium"),
-                "CPF": st.column_config.TextColumn("CPF", width="small"),
-                "Local de Trabalho": st.column_config.TextColumn("Local de Trabalho", width="small"),
-            }
+        # Renderiza a tabela corporativa com suporte a HTML para os links funcionarem
+        st.markdown(
+            tabela_html_df.to_html(escape=False, index=False, classes="dataframe"),
+            unsafe_allow_html=True
         )
     else:
         st.warning("⚠️ Nenhum registro encontrado.")
