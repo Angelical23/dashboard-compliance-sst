@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com links reais clicáveis na tabela principal.
+Dashboard corporativo com ícone de anexo limpo na tabela principal.
 """
 
 import datetime as dt
@@ -174,7 +174,7 @@ def calcular_status_por_data(data_val):
             if isinstance(data_val, str):
                 dt_val = dt.datetime.strptime(data_val.strip()[:10], "%Y-%m-%d").date()
             elif isinstance(data_val, dt.datetime):
-                dt_val = dt_val.date()
+                dt_val = data_val.date()
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
         except Exception:
@@ -552,9 +552,7 @@ with aba_principal:
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
-        # Monta um dicionário de mapeamento para injetar links HTML clicáveis direto na tabela
         mapa_status = {}
-        mapa_urls = {}
         for _, r in doc_df.iterrows():
             c_id = r["colaborador_id"]
             t_doc = r["tipo_documento"]
@@ -562,7 +560,7 @@ with aba_principal:
             
             url = r.get("arquivo_url")
             if url and pd.notna(url) and str(url).strip() != "":
-                s_final = f"{s} | <a href='{url}' target='_blank'>📎 <b>[Ver]</b></a>"
+                s_final = f"{s} <a href='{url}' target='_blank' style='text-decoration:none; margin-left: 5px;' title='Ver Documento'>📎</a>"
             else:
                 s_final = s
                 
@@ -614,9 +612,8 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o link <b>📎 [Ver]</b> ao lado da data na tabela já abre o documento diretamente em nova aba!</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
 
-        # Renderiza a tabela corporativa com suporte a HTML para os links funcionarem
         st.markdown(
             tabela_html_df.to_html(escape=False, index=False, classes="dataframe"),
             unsafe_allow_html=True
