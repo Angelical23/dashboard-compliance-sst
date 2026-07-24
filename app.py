@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com links e anexos corretos.
+Dashboard corporativo com upload e links corrigidos.
 """
 
 import datetime as dt
@@ -177,10 +177,9 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_por_data(data_val, arquivo_url):
+def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val):
-        status_txt = "✔️ Sem Data"
-        grupo = "Regular"
+        return "Regular", "✔️ Sem Data"
     else:
         try:
             if isinstance(data_val, str):
@@ -189,8 +188,6 @@ def calcular_status_por_data(data_val, arquivo_url):
                 dt_val = data_val.date()
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
-            else:
-                dt_val = dt.date.today()
         except Exception:
             dt_val = dt.date.today()
 
@@ -199,20 +196,11 @@ def calcular_status_por_data(data_val, arquivo_url):
         data_formatada = dt_val.strftime('%d/%m/%Y')
 
         if dias_restantes < 0:
-            grupo = "Vencido"
-            status_txt = f"🛑 Vencido ({data_formatada})"
+            return "Vencido", f"🛑 Vencido ({data_formatada})"
         elif 0 <= dias_restantes <= 30:
-            grupo = "Vence em Breve"
-            status_txt = f"⚠️ Vence em {data_formatada}"
+            return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
         else:
-            grupo = "Regular"
-            status_txt = f"✔️ {data_formatada}"
-
-    # Se houver arquivo anexado, adiciona o link Markdown de visualização
-    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
-        status_txt += f" [📎 Ver]({arquivo_url})"
-
-    return grupo, status_txt
+            return "Regular", f"✔️ {data_formatada}"
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -237,9 +225,16 @@ def carregar_dados_supabase(_conn):
 
         doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
         
-        status_calculados = doc_df.apply(lambda r: calcular_status_por_data(r["data_validade"], r.get("arquivo_url")), axis=1)
-        doc_df["status_grupo"] = [s[0] for s in status_calculados]
-        doc_df["status_detalhado"] = [s[1] for s in status_calculados]
+        status_grup = []
+        status_det = []
+        
+        for _, r in doc_df.iterrows():
+            g, s = calcular_status_por_data(r["data_validade"])
+            status_grup.append(g)
+            status_det.append(s)
+            
+        doc_df["status_grupo"] = status_grup
+        doc_df["status_detalhado"] = status_det
         
         return func_df, doc_df
     except Exception:
@@ -258,27 +253,25 @@ def fazer_upload_storage(arq, colaborador_id, tipo_id):
     if arq is not None and supabase_client is not None:
         try:
             file_path = f"colab_{colaborador_id}_tipo_{tipo_id}_{arq.name}"
-            try:
-                supabase_client.storage.from_("documentos_sst").remove([file_path])
-            except Exception:
-                pass
-
+            
+            # Faz o upload dos bytes diretamente
             supabase_client.storage.from_("documentos_sst").upload(
                 file_path,
                 arq.getvalue(),
-                file_options={"content-type": arq.type}
+                file_options={"upsert": "true"}
             )
             
+            # Obtém a URL pública correta
             public_url = supabase_client.storage.from_("documentos_sst").get_public_url(file_path)
             return public_url
         except Exception as e:
-            st.error(f"Erro no upload do arquivo: {e}")
+            st.error(f"Erro no upload: {e}")
             return None
     return None
 
 
 # ----------------------------------------------------------------------------
-# MODAL 1: VISUALIZAR DETALHES
+# MODAL 1: VISUALIZAR DETALHES E LINKS
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
@@ -298,7 +291,13 @@ def modal_visualizar(conn, colaborador, docs_colab):
     st.subheader("Documentos e Anexos")
     
     for _, doc in docs_colab.iterrows():
-        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}")
+        url_arq = doc.get("arquivo_url")
+        if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "":
+            link_html = f" - <a href='{url_arq}' target='_blank'>📎 [Ver Documento]</a>"
+        else:
+            link_html = " - <span style='color: #94A3B8;'>Sem anexo</span>"
+            
+        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{link_html}", unsafe_allow_html=True)
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -333,7 +332,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
                 label_visibility="collapsed"
             )
             novos_arquivos_upload[doc["tipo_documento_id"]] = st.file_uploader(
-                f"Anexar arquivo ({doc['tipo_documento']})",
+                f"Anexar novo arquivo ({doc['tipo_documento']})",
                 type=["pdf", "png", "jpg", "jpeg"],
                 key=f"file_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
             )
@@ -629,7 +628,7 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para ver os links de todos os documentos anexados organizados em formato de lista.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links limpos para visualizar cada documento anexado.</div>", unsafe_allow_html=True)
 
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
@@ -656,7 +655,7 @@ with aba_principal:
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E ANEXO DE LAUDOS SST</div>', unsafe_allow_html=True)
-    st.info("💡 Informe os dados, defina os prazos de validade e clique no botão de anexo para selecionar os arquivos PDF ou imagens direto do seu computador.")
+    st.info("💡 Informe os dados, defina os prazos de validade e selecione os arquivos do seu computador para envio automático.")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
