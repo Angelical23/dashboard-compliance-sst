@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com links e anexos via nuvem (Google Drive/SharePoint).
+Dashboard corporativo com links visíveis diretamente na tabela principal.
 """
 
 import datetime as dt
@@ -166,9 +166,11 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
 
-def calcular_status_por_data(data_val):
+def calcular_status_e_link(data_val, arquivo_url):
+    # Calcula status por data
     if not data_val or pd.isna(data_val):
-        return "Regular", "✔️ Sem Data"
+        grupo = "Regular"
+        status_txt = "✔️ Sem Data"
     else:
         try:
             if isinstance(data_val, str):
@@ -177,6 +179,8 @@ def calcular_status_por_data(data_val):
                 dt_val = data_val.date()
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
+            else:
+                dt_val = dt.date.today()
         except Exception:
             dt_val = dt.date.today()
 
@@ -185,11 +189,20 @@ def calcular_status_por_data(data_val):
         data_formatada = dt_val.strftime('%d/%m/%Y')
 
         if dias_restantes < 0:
-            return "Vencido", f"🛑 Vencido ({data_formatada})"
+            grupo = "Vencido"
+            status_txt = f"🛑 Vencido ({data_formatada})"
         elif 0 <= dias_restantes <= 30:
-            return "Vence em Breve", f"⚠️ Vence em {data_formatada}"
+            grupo = "Vence em Breve"
+            status_txt = f"⚠️ Vence em {data_formatada}"
         else:
-            return "Regular", f"✔️ {data_formatada}"
+            grupo = "Regular"
+            status_txt = f"✔️ {data_formatada}"
+
+    # Adiciona o link visível se houver URL cadastrada
+    if arquivo_url and pd.notna(arquivo_url) and str(arquivo_url).strip() != "":
+        status_txt += f" | 📎 [Ver]"
+
+    return grupo, status_txt
 
 
 @st.cache_data(show_spinner=False, ttl=10)
@@ -218,7 +231,7 @@ def carregar_dados_supabase(_conn):
         status_det = []
         
         for _, r in doc_df.iterrows():
-            g, s = calcular_status_por_data(r["data_validade"])
+            g, s = calcular_status_e_link(r["data_validade"], r.get("arquivo_url"))
             status_grup.append(g)
             status_det.append(s)
             
@@ -549,7 +562,7 @@ with aba_principal:
 
     st.write("")
 
-    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E LINKS)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
         pivot_status = doc_df.pivot_table(
@@ -594,7 +607,7 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links para acessar cada documento.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o símbolo <b>📎 [Ver]</b> aparece diretamente ao lado da data na tabela principal para cada documento que possui link cadastrado!</div>", unsafe_allow_html=True)
 
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
