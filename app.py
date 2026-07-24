@@ -242,7 +242,6 @@ else:
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
-    # Exibe apenas as informações de texto de forma limpa, sem bloco de imagem
     st.markdown(f"### {colaborador['nome_completo']}")
     st.write(f"**CPF:** {colaborador['cpf']}")
     st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
@@ -575,13 +574,19 @@ with aba_principal:
 
         tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
 
+        # --- CONTROLE DE ESTADO DO SELECTBOX PARA EVITAR ERRO APÓS EXCLUSÃO ---
+        ids_disponiveis = func_df["id"].tolist()
+        if "coluna_selecao_id" not in st.session_state or st.session_state["coluna_selecao_id"] not in ids_disponiveis:
+            st.session_state["coluna_selecao_id"] = ids_disponiveis[0] if ids_disponiveis else None
+
         col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
         
         with col_sel:
             coluna_selecao = st.selectbox(
                 "Selecione um colaborador:",
-                options=func_df["id"].tolist(),
-                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0],
+                options=ids_disponiveis,
+                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
+                key="coluna_selecao_id",
                 label_visibility="collapsed"
             )
             
@@ -607,6 +612,42 @@ with aba_principal:
 
         st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
 
+        # --- ESTILIZAÇÃO CSS CORRETA PARA A TABELA HTML NÃO DESALINHAR ---
+        st.markdown(
+            """
+            <style>
+                table.dataframe {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-family: sans-serif;
+                    font-size: 14px;
+                    background-color: #FFFFFF;
+                    border: 1px solid #E2E8F0;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+                table.dataframe th {
+                    background-color: #F8FAFC;
+                    color: #0F172A;
+                    text-align: left;
+                    padding: 12px 16px;
+                    border-bottom: 2px solid #E2E8F0;
+                    font-weight: 700;
+                }
+                table.dataframe td {
+                    padding: 12px 16px;
+                    border-bottom: 1px solid #E2E8F0;
+                    color: #334155;
+                    vertical-align: middle;
+                }
+                table.dataframe tr:hover {
+                    background-color: #F1F5F9;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
         st.markdown(
             tabela_html_df.to_html(escape=False, index=False, classes="dataframe"),
             unsafe_allow_html=True
@@ -629,7 +670,7 @@ with aba_cadastro:
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
-        f_col1, f_col2 = st.columns(2)  # Ajustado para 2 colunas já que removemos o campo de foto
+        f_col1, f_col2 = st.columns(2)
         with f_col1:
             nome = st.text_input("Nome Completo *")
         with f_col2:
@@ -671,7 +712,6 @@ with aba_cadastro:
             if nome and cpf:
                 if conn is not None:
                     try:
-                        # Salva o colaborador deixando o campo foto_url vazio (NULL ou string vazia)
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
                             "cpf": cpf,
