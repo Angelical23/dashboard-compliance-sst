@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com upload e links corrigidos.
+Dashboard corporativo com upload e anexos de documentos SST corrigidos.
 """
 
 import datetime as dt
@@ -252,21 +252,32 @@ else:
 def fazer_upload_storage(arq, colaborador_id, tipo_id):
     if arq is not None and supabase_client is not None:
         try:
-            file_path = f"colab_{colaborador_id}_tipo_{tipo_id}_{arq.name}"
+            file_name = f"colab_{colaborador_id}_tipo_{tipo_id}_{arq.name}"
+            file_bytes = arq.getvalue()
             
-            # Faz o upload dos bytes diretamente
+            # Executa o upload para o bucket 'documentos_sst'
             supabase_client.storage.from_("documentos_sst").upload(
-                file_path,
-                arq.getvalue(),
-                file_options={"upsert": "true"}
+                file_name,
+                file_bytes,
+                file_options={"upsert": "true", "content-type": arq.type}
             )
             
-            # Obtém a URL pública correta
-            public_url = supabase_client.storage.from_("documentos_sst").get_public_url(file_path)
-            return public_url
+            # Resgata a URL pública oficial gerada pelo Storage do Supabase
+            res = supabase_client.storage.from_("documentos_sst").get_public_url(file_name)
+            return res
         except Exception as e:
-            st.error(f"Erro no upload: {e}")
-            return None
+            # Caso o arquivo já exista e dê conflito no upload por nome, tenta atualizar (upsert via API nativa se necessário)
+            try:
+                supabase_client.storage.from_("documentos_sst").update(
+                    file_name,
+                    arq.getvalue(),
+                    file_options={"content-type": arq.type}
+                )
+                res = supabase_client.storage.from_("documentos_sst").get_public_url(file_name)
+                return res
+            except Exception as inner_e:
+                st.error(f"Erro detalhado no upload do arquivo: {inner_e}")
+                return None
     return None
 
 
@@ -293,7 +304,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
     for _, doc in docs_colab.iterrows():
         url_arq = doc.get("arquivo_url")
         if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "":
-            link_html = f" - <a href='{url_arq}' target='_blank'>📎 [Ver Documento]</a>"
+            link_html = f" - <a href='{url_arq}' target='_blank'>📎 <b>[Ver Documento]</b></a>"
         else:
             link_html = " - <span style='color: #94A3B8;'>Sem anexo</span>"
             
@@ -628,7 +639,7 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links limpos para visualizar cada documento anexado.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links para visualizar cada documento anexado.</div>", unsafe_allow_html=True)
 
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
@@ -717,6 +728,7 @@ with aba_cadastro:
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
 
+                        # Faz o upload e obtém a URL pública garantida
                         url_aso = fazer_upload_storage(file_aso, novo_id, 2)
                         url_adm = fazer_upload_storage(file_adm, novo_id, 1)
                         url_epi = fazer_upload_storage(file_epi, novo_id, 3)
