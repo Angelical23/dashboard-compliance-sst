@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com ícone de anexo limpo na tabela principal.
+Dashboard corporativo sem fotos automáticas.
 """
 
 import datetime as dt
@@ -238,21 +238,14 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL 1: VISUALIZAR DETALHES E LINKS
+# MODAL 1: VISUALIZAR DETALHES E LINKS (SEM FOTO)
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
-    col_img, col_info = st.columns([1, 3])
-    with col_img:
-        foto = colaborador.get("foto_url")
-        if foto:
-            st.image(foto, width=100)
-        else:
-            st.image("https://i.pravatar.cc/150?img=32", width=100)
-    with col_info:
-        st.markdown(f"### {colaborador['nome_completo']}")
-        st.write(f"**CPF:** {colaborador['cpf']}")
-        st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
+    # Exibe apenas as informações de texto de forma limpa, sem bloco de imagem
+    st.markdown(f"### {colaborador['nome_completo']}")
+    st.write(f"**CPF:** {colaborador['cpf']}")
+    st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
     
     st.markdown("---")
     st.subheader("Documentos e Links de Acesso")
@@ -612,7 +605,7 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Agora o símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
 
         st.markdown(
             tabela_html_df.to_html(escape=False, index=False, classes="dataframe"),
@@ -628,7 +621,7 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO
+# ABA 2: TELA DE CADASTRO (SEM CAMPO DE FOTO)
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E LINKS DE LAUDOS SST</div>', unsafe_allow_html=True)
@@ -636,18 +629,13 @@ with aba_cadastro:
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
-        f_col1, f_col2, f_col3 = st.columns(3)
+        f_col1, f_col2 = st.columns(2)  # Ajustado para 2 colunas já que removemos o campo de foto
         with f_col1:
             nome = st.text_input("Nome Completo *")
         with f_col2:
             cpf = st.text_input("CPF *")
-        with f_col3:
-            setor = st.selectbox("Setor / Local de Trabalho", SETORES)
-        
-        foto_url_input = st.text_input(
-            "Link da Foto do Colaborador (Opcional)",
-            value=""
-        )
+            
+        setor = st.selectbox("Setor / Local de Trabalho", SETORES)
         
         st.markdown("---")
         st.subheader("Validade e Links dos Documentos Obrigatórios")
@@ -683,13 +671,12 @@ with aba_cadastro:
             if nome and cpf:
                 if conn is not None:
                     try:
-                        foto_final = foto_url_input.strip() if foto_url_input and foto_url_input.startswith("http") else f"https://i.pravatar.cc/150?img={dt.datetime.now().second}"
-                        
+                        # Salva o colaborador deixando o campo foto_url vazio (NULL ou string vazia)
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
                             "cpf": cpf,
                             "local_trabalho": setor,
-                            "foto_url": foto_final
+                            "foto_url": ""
                         }).execute()
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
