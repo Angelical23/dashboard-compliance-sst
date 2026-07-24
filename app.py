@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com upload direto para o Supabase Storage.
+Dashboard corporativo com links e anexos via nuvem (Google Drive/SharePoint).
 """
 
 import datetime as dt
@@ -11,7 +11,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from supabase import create_client
 
 try:
     from st_supabase_connection import SupabaseConnection
@@ -163,16 +162,6 @@ def get_connection():
         return None
 
 
-@st.cache_resource(show_spinner=False)
-def get_supabase_client():
-    try:
-        url = st.secrets["connections"]["supabase"]["supabase_url"]
-        key = st.secrets["connections"]["supabase"]["supabase_key"]
-        return create_client(url, key)
-    except Exception:
-        return None
-
-
 TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 SETORES = ["TJ", "CEAGESP"]
 
@@ -242,40 +231,10 @@ def carregar_dados_supabase(_conn):
 
 
 conn = get_connection()
-supabase_client = get_supabase_client()
 if conn is not None:
     func_df, doc_df = carregar_dados_supabase(conn)
 else:
     func_df, doc_df = pd.DataFrame(), pd.DataFrame()
-
-
-def fazer_upload_storage(arq, colaborador_id, tipo_id):
-    if arq is not None and supabase_client is not None:
-        try:
-            nome_limpo = "".join(c for c in arq.name if c.isalnum() or c in ('.', '_', '-'))
-            file_name = f"colab_{colaborador_id}_tipo_{tipo_id}_{nome_limpo}"
-            file_bytes = arq.getvalue()
-            
-            # Envia o arquivo para o bucket
-            supabase_client.storage.from_("documentos_sst").upload(
-                file_name,
-                file_bytes,
-                file_options={"upsert": "true", "content-type": arq.type}
-            )
-            
-            # Recupera a URL pública oficial do arquivo enviado
-            res = supabase_client.storage.from_("documentos_sst").get_public_url(file_name)
-            
-            if isinstance(res, dict):
-                public_url = res.get("publicUrl") or res.get("public_url")
-            else:
-                public_url = str(res)
-                
-            return public_url
-        except Exception as e:
-            st.error(f"Erro detalhado no upload para o Storage: {e}")
-            return None
-    return None
 
 
 # ----------------------------------------------------------------------------
@@ -296,14 +255,14 @@ def modal_visualizar(conn, colaborador, docs_colab):
         st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
     
     st.markdown("---")
-    st.subheader("Documentos e Anexos")
+    st.subheader("Documentos e Links de Acesso")
     
     for _, doc in docs_colab.iterrows():
         url_arq = doc.get("arquivo_url")
         if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "":
-            link_html = f" - <a href='{url_arq}' target='_blank'>📎 <b>[Ver Documento]</b></a>"
+            link_html = f" - <a href='{url_arq}' target='_blank'>📎 <b>[Ver Documento na Nuvem]</b></a>"
         else:
-            link_html = " - <span style='color: #94A3B8;'>Sem anexo</span>"
+            link_html = " - <span style='color: #94A3B8;'>Sem link cadastrado</span>"
             
         st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{link_html}", unsafe_allow_html=True)
     
@@ -313,16 +272,16 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E ANEXOS
+# MODAL 2: EDITAR PRAZOS E LINKS
 # ----------------------------------------------------------------------------
-@st.dialog("✏️ Atualizar Prazos e Anexos")
+@st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador, docs_colab):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
     with st.form(f"form_editar_{colaborador['id']}"):
         novas_datas = {}
-        novos_arquivos_upload = {}
+        novos_links = {}
         
         for _, doc in docs_colab.iterrows():
             val_atual = dt.date.today()
@@ -332,17 +291,19 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
             except Exception:
                 pass
                 
+            link_atual = doc.get("arquivo_url") if pd.notna(doc.get("arquivo_url")) else ""
+            
             st.markdown(f"**{doc['tipo_documento']}**")
             novas_datas[doc["tipo_documento_id"]] = st.date_input(
                 f"Validade ({doc['tipo_documento']})",
                 value=val_atual,
-                key=f"date_edit_{colaborador['id']}_{doc['tipo_documento_id']}",
-                label_visibility="collapsed"
+                key=f"date_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
             )
-            novos_arquivos_upload[doc["tipo_documento_id"]] = st.file_uploader(
-                f"Anexar novo arquivo ({doc['tipo_documento']})",
-                type=["pdf", "png", "jpg", "jpeg"],
-                key=f"file_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
+            novos_links[doc["tipo_documento_id"]] = st.text_input(
+                f"Link do documento ({doc['tipo_documento']})",
+                value=link_atual,
+                key=f"link_edit_{colaborador['id']}_{doc['tipo_documento_id']}",
+                placeholder="Cole o link do Google Drive, SharePoint ou OneDrive aqui..."
             )
             st.markdown("---")
             
@@ -351,17 +312,14 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
         if salvar_edicao:
             try:
                 for tipo_id, nova_data in novas_datas.items():
-                    dados_update = {"data_validade": str(nova_data)}
-                    
-                    arq = novos_arquivos_upload.get(tipo_id)
-                    if arq is not None:
-                        url_arquivo = fazer_upload_storage(arq, colaborador["id"], tipo_id)
-                        if url_arquivo:
-                            dados_update["arquivo_url"] = url_arquivo
-
+                    link_informado = novos_links.get(tipo_id, "").strip()
+                    dados_update = {
+                        "data_validade": str(nova_data),
+                        "arquivo_url": link_informado if link_informado else None
+                    }
                     conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
                     
-                st.success("✨ Prazos e anexos atualizados com sucesso!")
+                st.success("✨ Prazos e links atualizados com sucesso!")
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
@@ -591,7 +549,7 @@ with aba_principal:
 
     st.write("")
 
-    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E LINKS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
         pivot_status = doc_df.pivot_table(
@@ -624,7 +582,7 @@ with aba_principal:
                     modal_visualizar(conn, colaborador_sel, docs_sel)
                     
         with col_btn2:
-            if st.button("✏️ Editar Prazos", use_container_width=True):
+            if st.button("✏️ Editar Prazos e Links", use_container_width=True):
                 if coluna_selecao:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
@@ -636,7 +594,7 @@ with aba_principal:
                     colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
                     modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links para visualizar cada documento anexado.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: Clique no botão <b>Visualizar</b> acima para abrir a janela com os links para acessar cada documento.</div>", unsafe_allow_html=True)
 
         st.dataframe(
             tabela_exibicao.drop(columns=["ID"]),
@@ -662,8 +620,8 @@ with aba_principal:
 # ABA 2: TELA DE CADASTRO
 # ============================================================================
 with aba_cadastro:
-    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E ANEXO DE LAUDOS SST</div>', unsafe_allow_html=True)
-    st.info("💡 Informe os dados, defina os prazos de validade e selecione os arquivos do seu computador para envio automático.")
+    st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E LINKS DE LAUDOS SST</div>', unsafe_allow_html=True)
+    st.info("💡 Informe os dados, defina os prazos e cole o link do documento (Google Drive, SharePoint, OneDrive, etc.).")
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
@@ -681,34 +639,34 @@ with aba_cadastro:
         )
         
         st.markdown("---")
-        st.subheader("Validade e Upload de Documentos Obrigatórios")
+        st.subheader("Validade e Links dos Documentos Obrigatórios")
         
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         
         with d_col1:
             st.markdown("**ASO**")
-            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31), label_visibility="collapsed")
-            file_aso = st.file_uploader("Selecionar ASO", type=["pdf", "png", "jpg", "jpeg"], key="up_aso")
+            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31), key="cad_d_aso")
+            link_aso = st.text_input("Link ASO", placeholder="https://...", key="cad_l_aso")
             
         with d_col2:
             st.markdown("**Ficha Admissão**")
-            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31), label_visibility="collapsed")
-            file_adm = st.file_uploader("Selecionar Admissão", type=["pdf", "png", "jpg", "jpeg"], key="up_adm")
+            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31), key="cad_d_adm")
+            link_adm = st.text_input("Link Admissão", placeholder="https://...", key="cad_l_adm")
             
         with d_col3:
             st.markdown("**Ficha de EPI**")
-            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31), label_visibility="collapsed")
-            file_epi = st.file_uploader("Selecionar EPI", type=["pdf", "png", "jpg", "jpeg"], key="up_epi")
+            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31), key="cad_d_epi")
+            link_epi = st.text_input("Link EPI", placeholder="https://...", key="cad_l_epi")
             
         with d_col4:
             st.markdown("**Certificado NR06**")
-            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31), label_visibility="collapsed")
-            file_nr06 = st.file_uploader("Selecionar NR06", type=["pdf", "png", "jpg", "jpeg"], key="up_nr06")
+            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31), key="cad_d_nr06")
+            link_nr06 = st.text_input("Link NR06", placeholder="https://...", key="cad_l_nr06")
         
         st.write("")
         b_salvar, _ = st.columns([2, 8])
         with b_salvar:
-            enviar = st.form_submit_button("💾 Salvar Colaborador e Anexos", use_container_width=True)
+            enviar = st.form_submit_button("💾 Salvar Colaborador e Links", use_container_width=True)
         
         if enviar:
             if nome and cpf:
@@ -725,17 +683,11 @@ with aba_cadastro:
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
 
-                        # Faz o upload e armazena os links gerados
-                        url_aso = fazer_upload_storage(file_aso, novo_id, 2)
-                        url_adm = fazer_upload_storage(file_adm, novo_id, 1)
-                        url_epi = fazer_upload_storage(file_epi, novo_id, 3)
-                        url_nr06 = fazer_upload_storage(file_nr06, novo_id, 4)
-
                         docs_para_inserir = [
-                            (1, str(data_ficha_adm), url_adm),
-                            (2, str(data_aso), url_aso),
-                            (3, str(data_epi), url_epi),
-                            (4, str(data_nr06), url_nr06)
+                            (1, str(data_ficha_adm), link_adm.strip()),
+                            (2, str(data_aso), link_aso.strip()),
+                            (3, str(data_epi), link_epi.strip()),
+                            (4, str(data_nr06), link_nr06.strip())
                         ]
                         
                         for tipo_id, val_data, url_doc in docs_para_inserir:
@@ -743,10 +695,10 @@ with aba_cadastro:
                                 "colaborador_id": novo_id,
                                 "tipo_documento_id": tipo_id,
                                 "data_validade": val_data,
-                                "arquivo_url": url_doc
+                                "arquivo_url": url_doc if url_doc else None
                             }).execute()
                             
-                        st.success("✨ Colaborador, prazos e documentos anexados com sucesso no Supabase! Retorne à aba do Dashboard.")
+                        st.success("✨ Colaborador, prazos e links salvos com sucesso no Supabase! Retorne à aba do Dashboard.")
                         st.cache_data.clear()
                     except Exception as e:
                         st.error(f"Erro ao salvar no banco: {e}")
