@@ -1,7 +1,7 @@
 """
 GESTÃO DE SEGURANÇA DO TRABALHO - DASHBOARD DE COMPLIANCE
 ==========================================================
-Dashboard corporativo com upload e captura correta de URLs do Supabase Storage.
+Dashboard corporativo com upload direto para o Supabase Storage.
 """
 
 import datetime as dt
@@ -252,19 +252,18 @@ else:
 def fazer_upload_storage(arq, colaborador_id, tipo_id):
     if arq is not None and supabase_client is not None:
         try:
-            # Limpa caracteres especiais do nome do arquivo para evitar conflitos na nuvem
             nome_limpo = "".join(c for c in arq.name if c.isalnum() or c in ('.', '_', '-'))
             file_name = f"colab_{colaborador_id}_tipo_{tipo_id}_{nome_limpo}"
             file_bytes = arq.getvalue()
             
-            # Faz o upload (substitui se já existir)
+            # Envia o arquivo para o bucket
             supabase_client.storage.from_("documentos_sst").upload(
                 file_name,
                 file_bytes,
                 file_options={"upsert": "true", "content-type": arq.type}
             )
             
-            # Extração correta da URL pública do objeto retornado pelo Supabase Python
+            # Recupera a URL pública oficial do arquivo enviado
             res = supabase_client.storage.from_("documentos_sst").get_public_url(file_name)
             
             if isinstance(res, dict):
@@ -274,7 +273,7 @@ def fazer_upload_storage(arq, colaborador_id, tipo_id):
                 
             return public_url
         except Exception as e:
-            st.error(f"Erro no upload do arquivo: {e}")
+            st.error(f"Erro detalhado no upload para o Storage: {e}")
             return None
     return None
 
@@ -726,7 +725,7 @@ with aba_cadastro:
                         
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
 
-                        # Faz o upload direto do computador para a nuvem do Supabase
+                        # Faz o upload e armazena os links gerados
                         url_aso = fazer_upload_storage(file_aso, novo_id, 2)
                         url_adm = fazer_upload_storage(file_adm, novo_id, 1)
                         url_epi = fazer_upload_storage(file_epi, novo_id, 3)
