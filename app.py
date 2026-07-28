@@ -269,14 +269,13 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS (COM CONVERSÃO INT PARA EVITAR ERRO JSON)
+# MODAL 2: EDITAR PRAZOS E LINKS (PADRÃO ADEANE)
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
-    # Converte explicitamente o ID do colaborador para int padrão do Python
     colab_id = int(colaborador["id"])
     
     try:
@@ -300,7 +299,7 @@ def modal_editar_prazos(conn, colaborador):
         doc_resp = conn.table("compliance_documentos").select("tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colab_id).execute()
         if doc_resp.data:
             for d in doc_resp.data:
-                docs_existentes[d["tipo_documento_id"]] = d
+                docs_existentes[int(d["tipo_documento_id"])] = d
     except Exception:
         pass
 
@@ -351,6 +350,7 @@ def modal_editar_prazos(conn, colaborador):
                         "arquivo_url": link_informado if link_informado else None
                     }
                     
+                    # Remove e reinsere de forma blindada garantindo o ID padrão Python
                     conn.table("compliance_documentos").delete().eq("colaborador_id", colab_id).eq("tipo_documento_id", int(tipo_id)).execute()
                     conn.table("compliance_documentos").insert(dados_payload).execute()
                     
