@@ -163,7 +163,6 @@ def get_connection():
 
 
 TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
-SETORES = ["TJ", "CEAGESP"]
 
 
 def calcular_status_por_data(data_val):
@@ -479,8 +478,11 @@ with aba_principal:
                 .size()
                 .reset_index(name="quantidade")
             )
+            setores_existentes = func_df["local_trabalho"].dropna().unique().tolist()
+            if not setores_existentes:
+                setores_existentes = ["Geral"]
             todas_combos = pd.MultiIndex.from_product(
-                [SETORES, ["Regular", "Vence em Breve", "Vencido"]], names=["local_trabalho", "status_grupo"]
+                [setores_existentes, ["Regular", "Vence em Breve", "Vencido"]], names=["local_trabalho", "status_grupo"]
             ).to_frame(index=False)
             contagem = todas_combos.merge(contagem, on=["local_trabalho", "status_grupo"], how="left").fillna(0)
             contagem["quantidade"] = contagem["quantidade"].astype(int)
@@ -494,7 +496,6 @@ with aba_principal:
             color="status_grupo",
             barmode="group",
             color_discrete_map=CORES,
-            category_orders={"local_trabalho": SETORES, "status_grupo": ["Regular", "Vence em Breve", "Vencido"]},
             labels={"local_trabalho": "Setor", "quantidade": "Qtd. de Documentos", "status_grupo": "Status"},
         )
         fig_bar.update_layout(
@@ -670,14 +671,14 @@ with aba_cadastro:
 
     with st.form("form_cadastro_separado", clear_on_submit=True):
         st.subheader("Dados Pessoais")
-        f_col1, f_col2 = st.columns(2)
+        f_col1, f_col2, f_col3 = st.columns(3)
         with f_col1:
             nome = st.text_input("Nome *")
         with f_col2:
             cpf = st.text_input("CPF *")
+        with f_col3:
+            setor = st.text_input("Setor / Local de Trabalho *", placeholder="Ex: Setor A, Obra 1...")
             
-        setor = st.selectbox("Setor / Local de Trabalho", SETORES)
-        
         st.markdown("---")
         st.subheader("Validade e Links dos Documentos Obrigatórios")
         
@@ -709,7 +710,7 @@ with aba_cadastro:
             enviar = st.form_submit_button("💾 Salvar Colaborador e Links", use_container_width=True)
         
         if enviar:
-            if nome and cpf:
+            if nome and cpf and setor:
                 if conn is not None:
                     try:
                         conn.table("colaboradores").insert({
@@ -743,7 +744,7 @@ with aba_cadastro:
                 else:
                     st.error("Conexão com o Supabase indisponível.")
             else:
-                st.warning("⚠️ Por favor, preencha obrigatoriamente o Nome e o CPF.")
+                st.warning("⚠️ Por favor, preencha obrigatoriamente o Nome, o CPF e o Setor/Local de Trabalho.")
 
 
 # ============================================================================
@@ -751,7 +752,7 @@ with aba_cadastro:
 # ============================================================================
 with aba_importacao:
     st.markdown('<div class="main-header-bar">IMPORTAÇÃO AUTOMÁTICA DE PLANILHAS POR SETOR</div>', unsafe_allow_html=True)
-    st.info("💡 Faça o upload de um arquivo Excel contendo várias abas (cada aba representando um setor, ex: TJ, CEAGESP). O sistema lerá o nome da aba como setor e os cadastros automaticamente.")
+    st.info("💡 Faça o upload de um arquivo Excel contendo várias abas (cada aba representando um setor). O sistema lerá o nome da aba como setor e os cadastros automaticamente.")
 
     arquivo_upload = st.file_uploader("Escolha o arquivo Excel (.xlsx)", type=["xlsx"])
 
