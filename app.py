@@ -466,7 +466,6 @@ with aba_principal:
 
     graf_esq, graf_dir = st.columns([6, 4])
     
-    # Adicionada a cor para o status "Falta Cadastrar" (Cinza claro/médio)
     CORES = {
         "Regular": "#2563EB", 
         "Vence em Breve": "#F59E0B", 
@@ -577,7 +576,7 @@ with aba_principal:
             c_id = colab["id"]
             row_data = {
                 "Nome Completo": colab["nome_completo"],
-                "CPF": colab["cpf"],
+                "CPF": str(colab["cpf"]).strip(),  # Garante string completa para o CPF
                 "Local de Trabalho": colab["local_trabalho"]
             }
             for tipo in TIPOS_DOCUMENTO:
@@ -624,7 +623,7 @@ with aba_principal:
 
         st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
 
-        # --- ESTILIZAÇÃO CSS CORRETA PARA A TABELA HTML NÃO DESALINHAR ---
+        # --- ESTILIZAÇÃO CSS COM CPF CENTRALIZADO E EXPANDIDO ---
         st.markdown(
             """
             <style>
@@ -651,6 +650,12 @@ with aba_principal:
                     border-bottom: 1px solid #E2E8F0;
                     color: #334155;
                     vertical-align: middle;
+                }
+                /* Centraliza e impede quebra de linha na coluna do CPF (Segunda coluna) */
+                table.dataframe th:nth-child(2),
+                table.dataframe td:nth-child(2) {
+                    text-align: center;
+                    white-space: nowrap;
                 }
                 table.dataframe tr:hover {
                     background-color: #F1F5F9;
@@ -726,12 +731,12 @@ with aba_cadastro:
                     try:
                         conn.table("colaboradores").insert({
                             "nome_completo": nome,
-                            "cpf": cpf,
+                            "cpf": str(cpf).strip(),
                             "local_trabalho": setor,
                             "foto_url": ""
                         }).execute()
                         
-                        novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
+                        novo_id = conn.table("colaboradores").select("id").eq("cpf", str(cpf).strip()).execute().data[-1]["id"]
 
                         docs_para_inserir = [
                             (1, str(data_ficha_adm) if data_ficha_adm else None, link_adm.strip()),
