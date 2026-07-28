@@ -167,7 +167,7 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 
 def calcular_status_por_data(data_val):
     if not data_val or pd.isna(data_val) or str(data_val).strip() in ["", "None", "NaT"]:
-        return "Falta Cadastrar", "⚠️ Falta Cadastrar"
+        return "Falta Cadastrar", "<span style='color: #64748B;'>➖ Falta Cadastrar</span>"
     else:
         try:
             if isinstance(data_val, str):
@@ -177,7 +177,7 @@ def calcular_status_por_data(data_val):
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
         except Exception:
-            return "Falta Cadastrar", "⚠️ Falta Cadastrar"
+            return "Falta Cadastrar", "<span style='color: #64748B;'>➖ Falta Cadastrar</span>"
 
         hoje = dt.date.today()
         dias_restantes = (dt_val - hoje).days
@@ -261,7 +261,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
             else:
                 link_html = " - <span style='color: #94A3B8;'>Sem link cadastrado</span>"
                 
-            st.markdown(f"• **{doc.get('tipo_documento', 'Documento')}**: {doc.get('status_detalhado', '⚠️ Falta Cadastrar')}{link_html}", unsafe_allow_html=True)
+            st.markdown(f"• **{doc.get('tipo_documento', 'Documento')}**: {doc.get('status_detalhado', '<span style=\"color: #64748B;\">➖ Falta Cadastrar</span>')}{link_html}", unsafe_allow_html=True)
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -269,14 +269,13 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS (ROBUSTO CONTRA DADOS FALTANTES)
+# MODAL 2: EDITAR PRAZOS E LINKS
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
-    # Busca os tipos de documentos cadastrados na tabela tipos_documento
     try:
         tipos_resp = conn.table("tipos_documento").select("id, nome_documento").execute()
         tipos_lista = tipos_resp.data if tipos_resp.data else [
@@ -293,7 +292,6 @@ def modal_editar_prazos(conn, colaborador):
             {"id": 4, "nome_documento": "Certificado NR06"}
         ]
 
-    # Busca os documentos existentes no banco para este colaborador
     docs_existentes = {}
     try:
         doc_resp = conn.table("compliance_documentos").select("tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colaborador["id"]).execute()
@@ -635,7 +633,7 @@ with aba_principal:
                 "Local de Trabalho": colab["local_trabalho"]
             }
             for tipo in TIPOS_DOCUMENTO:
-                row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "⚠️ Falta Cadastrar")
+                row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "<span style='color: #64748B;'>➖ Falta Cadastrar</span>")
             lista_linhas.append(row_data)
 
         if lista_linhas:
@@ -657,23 +655,23 @@ with aba_principal:
                     label_visibility="collapsed"
                 )
                 
+            # Recupera com precisão o registro exato do colaborador selecionado pelo ID
+            colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0] if coluna_selecao else None
+
             with col_btn1:
                 if st.button("👁️ Visualizar", use_container_width=True):
-                    if coluna_selecao:
-                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao] if not doc_df.empty else pd.DataFrame()
+                    if colaborador_sel is not None:
+                        docs_sel = doc_df[doc_df["colaborador_id"] == colaborador_sel["id"]] if not doc_df.empty else pd.DataFrame()
                         modal_visualizar(conn, colaborador_sel, docs_sel)
                         
             with col_btn2:
                 if st.button("✏️ Editar Prazos e Links", use_container_width=True):
-                    if coluna_selecao:
-                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    if colaborador_sel is not None:
                         modal_editar_prazos(conn, colaborador_sel)
                         
             with col_del_btn:
                 if st.button("⚙️ Excluir", use_container_width=True):
-                    if coluna_selecao:
-                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                    if colaborador_sel is not None:
                         modal_gerenciar_colaborador(conn, colaborador_sel)
 
             st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
