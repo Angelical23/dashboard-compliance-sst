@@ -269,12 +269,15 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS (VERSÃO BLINDADA)
+# MODAL 2: EDITAR PRAZOS E LINKS (COM CONVERSÃO INT PARA EVITAR ERRO JSON)
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
+    
+    # Converte explicitamente o ID do colaborador para int padrão do Python
+    colab_id = int(colaborador["id"])
     
     try:
         tipos_resp = conn.table("tipos_documento").select("id, nome_documento").execute()
@@ -294,19 +297,19 @@ def modal_editar_prazos(conn, colaborador):
 
     docs_existentes = {}
     try:
-        doc_resp = conn.table("compliance_documentos").select("tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colaborador["id"]).execute()
+        doc_resp = conn.table("compliance_documentos").select("tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colab_id).execute()
         if doc_resp.data:
             for d in doc_resp.data:
                 docs_existentes[d["tipo_documento_id"]] = d
     except Exception:
         pass
 
-    with st.form(f"form_editar_{colaborador['id']}"):
+    with st.form(f"form_editar_{colab_id}"):
         novas_datas = {}
         novos_links = {}
         
         for tipo in tipos_lista:
-            t_id = tipo["id"]
+            t_id = int(tipo["id"])
             t_nome = tipo["nome_documento"]
             
             doc_info = docs_existentes.get(t_id, {})
@@ -324,12 +327,12 @@ def modal_editar_prazos(conn, colaborador):
             novas_datas[t_id] = st.date_input(
                 f"Validade ({t_nome})",
                 value=val_atual,
-                key=f"date_edit_{colaborador['id']}_{t_id}"
+                key=f"date_edit_{colab_id}_{t_id}"
             )
             novos_links[t_id] = st.text_input(
                 f"Link do documento ({t_nome})",
                 value=link_atual,
-                key=f"link_edit_{colaborador['id']}_{t_id}",
+                key=f"link_edit_{colab_id}_{t_id}",
                 placeholder="Cole o link do Google Drive, SharePoint ou OneDrive aqui..."
             )
             st.markdown("---")
@@ -342,14 +345,13 @@ def modal_editar_prazos(conn, colaborador):
                     link_informado = novos_links.get(tipo_id, "").strip()
                     
                     dados_payload = {
-                        "colaborador_id": colaborador["id"],
-                        "tipo_documento_id": tipo_id,
+                        "colaborador_id": colab_id,
+                        "tipo_documento_id": int(tipo_id),
                         "data_validade": str(nova_data) if nova_data else None,
                         "arquivo_url": link_informado if link_informado else None
                     }
                     
-                    # Remove o registro antigo se houver para evitar conflitos e insere o atualizado
-                    conn.table("compliance_documentos").delete().eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    conn.table("compliance_documentos").delete().eq("colaborador_id", colab_id).eq("tipo_documento_id", int(tipo_id)).execute()
                     conn.table("compliance_documentos").insert(dados_payload).execute()
                     
                 st.success("✨ Prazos e links atualizados com sucesso!")
@@ -364,6 +366,7 @@ def modal_editar_prazos(conn, colaborador):
 # ----------------------------------------------------------------------------
 @st.dialog("Gerenciar Registro do Colaborador")
 def modal_gerenciar_colaborador(conn, colaborador):
+    colab_id = int(colaborador["id"])
     st.write(f"**Colaborador:** {colaborador['nome_completo']}")
     st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
     st.markdown("---")
@@ -371,7 +374,7 @@ def modal_gerenciar_colaborador(conn, colaborador):
     
     if st.button("🗑️ Excluir Colaborador Permanentemente", type="primary", use_container_width=True):
         try:
-            conn.table("colaboradores").delete().eq("id", colaborador["id"]).execute()
+            conn.table("colaboradores").delete().eq("id", colab_id).execute()
             st.success("Colaborador excluído com sucesso!")
             st.cache_data.clear()
             st.rerun()
@@ -609,7 +612,7 @@ with aba_principal:
         mapa_status = {}
         if not doc_df.empty:
             for _, r in doc_df.iterrows():
-                c_id = r["colaborador_id"]
+                c_id = int(r["colaborador_id"])
                 t_doc = r["tipo_documento"]
                 g, s = calcular_status_por_data(r["data_validade"])
                 
@@ -625,7 +628,7 @@ with aba_principal:
 
         lista_linhas = []
         for _, colab in func_filtrado.iterrows():
-            c_id = colab["id"]
+            c_id = int(colab["id"])
             row_data = {
                 "id": c_id,
                 "Nome Completo": colab["nome_completo"],
@@ -655,12 +658,12 @@ with aba_principal:
                     label_visibility="collapsed"
                 )
                 
-            colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0] if coluna_selecao else None
+            colaborador_sel = func_df[func_df["id"].astype(int) == int(coluna_selecao)].iloc[0] if coluna_selecao else None
 
             with col_btn1:
                 if st.button("👁️ Visualizar", use_container_width=True):
                     if colaborador_sel is not None:
-                        docs_sel = doc_df[doc_df["colaborador_id"] == colaborador_sel["id"]] if not doc_df.empty else pd.DataFrame()
+                        docs_sel = doc_df[doc_df["colaborador_id"].astype(int) == int(colaborador_sel["id"])] if not doc_df.empty else pd.DataFrame()
                         modal_visualizar(conn, colaborador_sel, docs_sel)
                         
             with col_btn2:
@@ -788,7 +791,7 @@ with aba_cadastro:
                             "foto_url": ""
                         }).execute()
                         
-                        novo_id = conn.table("colaboradores").select("id").eq("cpf", str(cpf).strip()).execute().data[-1]["id"]
+                        novo_id = int(conn.table("colaboradores").select("id").eq("cpf", str(cpf).strip()).execute().data[-1]["id"])
 
                         docs_para_inserir = [
                             (1, str(data_ficha_adm) if data_ficha_adm else None, link_adm.strip()),
@@ -800,7 +803,7 @@ with aba_cadastro:
                         for tipo_id, val_data, url_doc in docs_para_inserir:
                             conn.table("compliance_documentos").insert({
                                 "colaborador_id": novo_id,
-                                "tipo_documento_id": tipo_id,
+                                "tipo_documento_id": int(tipo_id),
                                 "data_validade": val_data,
                                 "arquivo_url": url_doc if url_doc else None
                             }).execute()
@@ -856,12 +859,12 @@ with aba_importacao:
                                     "foto_url": ""
                                 }).execute()
 
-                                novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf_colab).execute().data[-1]["id"]
+                                novo_id = int(conn.table("colaboradores").select("id").eq("cpf", cpf_colab).execute().data[-1]["id"])
 
                                 for tipo_id in [1, 2, 3, 4]:
                                     conn.table("compliance_documentos").insert({
                                         "colaborador_id": novo_id,
-                                        "tipo_documento_id": tipo_id,
+                                        "tipo_documento_id": int(tipo_id),
                                         "data_validade": None,
                                         "arquivo_url": None
                                     }).execute()
