@@ -166,8 +166,8 @@ TIPOS_DOCUMENTO = ["Ficha Admissão", "ASO", "Ficha de EPI", "Certificado NR06"]
 
 
 def calcular_status_por_data(data_val):
-    if not data_val or pd.isna(data_val):
-        return "Regular", "✔️ Sem Data"
+    if not data_val or pd.isna(data_val) or str(data_val).strip() in ["", "None", "NaT"]:
+        return "Falta Cadastrar", "⚠️ Falta Cadastrar"
     else:
         try:
             if isinstance(data_val, str):
@@ -177,7 +177,7 @@ def calcular_status_por_data(data_val):
             elif isinstance(data_val, dt.date):
                 dt_val = data_val
         except Exception:
-            dt_val = dt.date.today()
+            return "Falta Cadastrar", "⚠️ Falta Cadastrar"
 
         hoje = dt.date.today()
         dias_restantes = (dt_val - hoje).days
@@ -277,7 +277,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
         for _, doc in docs_colab.iterrows():
             val_atual = None
             try:
-                if pd.notna(doc["data_validade"]):
+                if pd.notna(doc["data_validade"]) and str(doc["data_validade"]).strip() not in ["", "None", "NaT"]:
                     val_atual = dt.datetime.strptime(str(doc["data_validade"])[:10], "%Y-%m-%d").date()
             except Exception:
                 pass
@@ -465,7 +465,14 @@ with aba_principal:
     st.write("")
 
     graf_esq, graf_dir = st.columns([6, 4])
-    CORES = {"Regular": "#2563EB", "Vence em Breve": "#F59E0B", "Vencido": "#EF4444"}
+    
+    # Adicionada a cor para o status "Falta Cadastrar" (Cinza claro/médio)
+    CORES = {
+        "Regular": "#2563EB", 
+        "Vence em Breve": "#F59E0B", 
+        "Vencido": "#EF4444",
+        "Falta Cadastrar": "#94A3B8"
+    }
 
     with graf_esq:
         st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -481,9 +488,12 @@ with aba_principal:
             setores_existentes = func_df["local_trabalho"].dropna().unique().tolist()
             if not setores_existentes:
                 setores_existentes = ["Geral"]
+            
+            status_possiveis = ["Regular", "Vence em Breve", "Vencido", "Falta Cadastrar"]
             todas_combos = pd.MultiIndex.from_product(
-                [setores_existentes, ["Regular", "Vence em Breve", "Vencido"]], names=["local_trabalho", "status_grupo"]
+                [setores_existentes, status_possiveis], names=["local_trabalho", "status_grupo"]
             ).to_frame(index=False)
+            
             contagem = todas_combos.merge(contagem, on=["local_trabalho", "status_grupo"], how="left").fillna(0)
             contagem["quantidade"] = contagem["quantidade"].astype(int)
         else:
@@ -496,6 +506,7 @@ with aba_principal:
             color="status_grupo",
             barmode="group",
             color_discrete_map=CORES,
+            category_orders={"status_grupo": ["Regular", "Vence em Breve", "Vencido", "Falta Cadastrar"]},
             labels={"local_trabalho": "Setor", "quantidade": "Qtd. de Documentos", "status_grupo": "Status"},
         )
         fig_bar.update_layout(
@@ -570,7 +581,7 @@ with aba_principal:
                 "Local de Trabalho": colab["local_trabalho"]
             }
             for tipo in TIPOS_DOCUMENTO:
-                row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "✔️ Sem Data")
+                row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "⚠️ Falta Cadastrar")
             lista_linhas.append(row_data)
 
         tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
@@ -775,14 +786,12 @@ with aba_importacao:
 
                         for _, linha in df_aba.iterrows():
                             try:
-                                # Aceita tanto "Nome" quanto "Nome Completo" na planilha
                                 nome_colab = str(linha.get("Nome", linha.get("Nome Completo", ""))).strip()
                                 cpf_colab = str(linha.get("CPF", "")).strip()
 
                                 if not nome_colab or nome_colab == "nan" or not cpf_colab or cpf_colab == "nan":
                                     continue
 
-                                # 1. Insere o colaborador usando o nome_completo para gravar na coluna correta do Supabase
                                 conn.table("colaboradores").insert({
                                     "nome_completo": nome_colab,
                                     "cpf": cpf_colab,
@@ -790,10 +799,8 @@ with aba_importacao:
                                     "foto_url": ""
                                 }).execute()
 
-                                # Busca o ID recém gerado
                                 novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf_colab).execute().data[-1]["id"]
 
-                                # 2. Insere os 4 tipos de documentos em branco (sem data e sem link) para preenchimento posterior
                                 for tipo_id in [1, 2, 3, 4]:
                                     conn.table("compliance_documentos").insert({
                                         "colaborador_id": novo_id,
