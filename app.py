@@ -195,7 +195,7 @@ def calcular_status_por_data(data_val):
 def carregar_dados_supabase(_conn):
     try:
         func_resp = _conn.table("colaboradores").select(
-            "id, nome, cpf, foto_url, local_trabalho"
+            "id, nome_completo, cpf, foto_url, local_trabalho"
         ).execute()
         
         tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
@@ -241,7 +241,7 @@ else:
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
-    st.markdown(f"### {colaborador['nome']}")
+    st.markdown(f"### {colaborador['nome_completo']}")
     st.write(f"**CPF:** {colaborador['cpf']}")
     st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
     
@@ -267,7 +267,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador, docs_colab):
-    st.write(f"Editando documentos de: **{colaborador['nome']}**")
+    st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
     with st.form(f"form_editar_{colaborador['id']}"):
@@ -322,7 +322,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
 # ----------------------------------------------------------------------------
 @st.dialog("Gerenciar Registro do Colaborador")
 def modal_gerenciar_colaborador(conn, colaborador):
-    st.write(f"**Colaborador:** {colaborador['nome']}")
+    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
     st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
     st.markdown("---")
     st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
@@ -565,7 +565,7 @@ with aba_principal:
         for _, colab in func_df.iterrows():
             c_id = colab["id"]
             row_data = {
-                "Nome": colab["nome"],
+                "Nome Completo": colab["nome_completo"],
                 "CPF": colab["cpf"],
                 "Local de Trabalho": colab["local_trabalho"]
             }
@@ -573,7 +573,7 @@ with aba_principal:
                 row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "✔️ Sem Data")
             lista_linhas.append(row_data)
 
-        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome")
+        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
 
         # --- CONTROLE DE ESTADO DO SELECTBOX PARA EVITAR ERRO APÓS EXCLUSÃO ---
         ids_disponiveis = func_df["id"].tolist()
@@ -586,7 +586,7 @@ with aba_principal:
             coluna_selecao = st.selectbox(
                 "Selecione um colaborador:",
                 options=ids_disponiveis,
-                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
+                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
                 key="coluna_selecao_id",
                 label_visibility="collapsed"
             )
@@ -714,7 +714,7 @@ with aba_cadastro:
                 if conn is not None:
                     try:
                         conn.table("colaboradores").insert({
-                            "nome": nome,
+                            "nome_completo": nome,
                             "cpf": cpf,
                             "local_trabalho": setor,
                             "foto_url": ""
@@ -775,15 +775,16 @@ with aba_importacao:
 
                         for _, linha in df_aba.iterrows():
                             try:
+                                # Aceita tanto "Nome" quanto "Nome Completo" na planilha
                                 nome_colab = str(linha.get("Nome", linha.get("Nome Completo", ""))).strip()
                                 cpf_colab = str(linha.get("CPF", "")).strip()
 
                                 if not nome_colab or nome_colab == "nan" or not cpf_colab or cpf_colab == "nan":
                                     continue
 
-                                # 1. Insere o colaborador usando o nome da aba como setor automático
+                                # 1. Insere o colaborador usando o nome_completo para gravar na coluna correta do Supabase
                                 conn.table("colaboradores").insert({
-                                    "nome": nome_colab,
+                                    "nome_completo": nome_colab,
                                     "cpf": cpf_colab,
                                     "local_trabalho": setor_atual,
                                     "foto_url": ""
