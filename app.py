@@ -196,7 +196,7 @@ def calcular_status_por_data(data_val):
 def carregar_dados_supabase(_conn):
     try:
         func_resp = _conn.table("colaboradores").select(
-            "id, nome_completo, cpf, foto_url, local_trabalho"
+            "id, nome, cpf, foto_url, local_trabalho"
         ).execute()
         
         tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
@@ -242,7 +242,7 @@ else:
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
-    st.markdown(f"### {colaborador['nome_completo']}")
+    st.markdown(f"### {colaborador['nome']}")
     st.write(f"**CPF:** {colaborador['cpf']}")
     st.write(f"**Setor / Local:** {colaborador['local_trabalho']}")
     
@@ -268,7 +268,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador, docs_colab):
-    st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
+    st.write(f"Editando documentos de: **{colaborador['nome']}**")
     st.markdown("---")
     
     with st.form(f"form_editar_{colaborador['id']}"):
@@ -276,7 +276,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
         novos_links = {}
         
         for _, doc in docs_colab.iterrows():
-            val_atual = dt.date.today()
+            val_atual = None
             try:
                 if pd.notna(doc["data_validade"]):
                     val_atual = dt.datetime.strptime(str(doc["data_validade"])[:10], "%Y-%m-%d").date()
@@ -306,7 +306,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
                 for tipo_id, nova_data in novas_datas.items():
                     link_informado = novos_links.get(tipo_id, "").strip()
                     dados_update = {
-                        "data_validade": str(nova_data),
+                        "data_validade": str(nova_data) if nova_data else None,
                         "arquivo_url": link_informado if link_informado else None
                     }
                     conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
@@ -323,7 +323,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
 # ----------------------------------------------------------------------------
 @st.dialog("Gerenciar Registro do Colaborador")
 def modal_gerenciar_colaborador(conn, colaborador):
-    st.write(f"**Colaborador:** {colaborador['nome_completo']}")
+    st.write(f"**Colaborador:** {colaborador['nome']}")
     st.write(f"**CPF:** {colaborador['cpf']} | **Setor:** {colaborador['local_trabalho']}")
     st.markdown("---")
     st.warning("Atenção: A exclusão removerá o colaborador e todo o seu histórico de documentos do Supabase.")
@@ -341,7 +341,7 @@ def modal_gerenciar_colaborador(conn, colaborador):
 # ----------------------------------------------------------------------------
 # NAVEGAÇÃO POR ABAS
 # ----------------------------------------------------------------------------
-aba_principal, aba_cadastro = st.tabs(["📊 Dashboard de Compliance", "➕ Cadastrar Novo Colaborador"])
+aba_principal, aba_cadastro, aba_importacao = st.tabs(["📊 Dashboard de Compliance", "➕ Cadastrar Novo Colaborador", "📁 Importar Planilha"])
 
 
 # ============================================================================
@@ -564,7 +564,7 @@ with aba_principal:
         for _, colab in func_df.iterrows():
             c_id = colab["id"]
             row_data = {
-                "Nome Completo": colab["nome_completo"],
+                "Nome": colab["nome"],
                 "CPF": colab["cpf"],
                 "Local de Trabalho": colab["local_trabalho"]
             }
@@ -572,7 +572,7 @@ with aba_principal:
                 row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "✔️ Sem Data")
             lista_linhas.append(row_data)
 
-        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
+        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome")
 
         # --- CONTROLE DE ESTADO DO SELECTBOX PARA EVITAR ERRO APÓS EXCLUSÃO ---
         ids_disponiveis = func_df["id"].tolist()
@@ -585,7 +585,7 @@ with aba_principal:
             coluna_selecao = st.selectbox(
                 "Selecione um colaborador:",
                 options=ids_disponiveis,
-                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
+                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
                 key="coluna_selecao_id",
                 label_visibility="collapsed"
             )
@@ -662,7 +662,7 @@ with aba_principal:
 
 
 # ============================================================================
-# ABA 2: TELA DE CADASTRO (SEM CAMPO DE FOTO)
+# ABA 2: TELA DE CADASTRO MANUAL
 # ============================================================================
 with aba_cadastro:
     st.markdown('<div class="main-header-bar">CADASTRO DE NOVO COLABORADOR E LINKS DE LAUDOS SST</div>', unsafe_allow_html=True)
@@ -672,7 +672,7 @@ with aba_cadastro:
         st.subheader("Dados Pessoais")
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            nome = st.text_input("Nome Completo *")
+            nome = st.text_input("Nome *")
         with f_col2:
             cpf = st.text_input("CPF *")
             
@@ -685,22 +685,22 @@ with aba_cadastro:
         
         with d_col1:
             st.markdown("**ASO**")
-            data_aso = st.date_input("Validade ASO", value=dt.date(2026, 12, 31), key="cad_d_aso")
+            data_aso = st.date_input("Validade ASO", value=None, key="cad_d_aso")
             link_aso = st.text_input("Link ASO", placeholder="https://...", key="cad_l_aso")
             
         with d_col2:
             st.markdown("**Ficha Admissão**")
-            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=dt.date(2026, 12, 31), key="cad_d_adm")
+            data_ficha_adm = st.date_input("Validade Ficha Admissão", value=None, key="cad_d_adm")
             link_adm = st.text_input("Link Admissão", placeholder="https://...", key="cad_l_adm")
             
         with d_col3:
             st.markdown("**Ficha de EPI**")
-            data_epi = st.date_input("Validade Ficha de EPI", value=dt.date(2026, 12, 31), key="cad_d_epi")
+            data_epi = st.date_input("Validade Ficha de EPI", value=None, key="cad_d_epi")
             link_epi = st.text_input("Link EPI", placeholder="https://...", key="cad_l_epi")
             
         with d_col4:
             st.markdown("**Certificado NR06**")
-            data_nr06 = st.date_input("Validade Certificado NR06", value=dt.date(2026, 12, 31), key="cad_d_nr06")
+            data_nr06 = st.date_input("Validade Certificado NR06", value=None, key="cad_d_nr06")
             link_nr06 = st.text_input("Link NR06", placeholder="https://...", key="cad_l_nr06")
         
         st.write("")
@@ -713,7 +713,7 @@ with aba_cadastro:
                 if conn is not None:
                     try:
                         conn.table("colaboradores").insert({
-                            "nome_completo": nome,
+                            "nome": nome,
                             "cpf": cpf,
                             "local_trabalho": setor,
                             "foto_url": ""
@@ -722,10 +722,10 @@ with aba_cadastro:
                         novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf).execute().data[-1]["id"]
 
                         docs_para_inserir = [
-                            (1, str(data_ficha_adm), link_adm.strip()),
-                            (2, str(data_aso), link_aso.strip()),
-                            (3, str(data_epi), link_epi.strip()),
-                            (4, str(data_nr06), link_nr06.strip())
+                            (1, str(data_ficha_adm) if data_ficha_adm else None, link_adm.strip()),
+                            (2, str(data_aso) if data_aso else None, link_aso.strip()),
+                            (3, str(data_epi) if data_epi else None, link_epi.strip()),
+                            (4, str(data_nr06) if data_nr06 else None, link_nr06.strip())
                         ]
                         
                         for tipo_id, val_data, url_doc in docs_para_inserir:
@@ -744,3 +744,72 @@ with aba_cadastro:
                     st.error("Conexão com o Supabase indisponível.")
             else:
                 st.warning("⚠️ Por favor, preencha obrigatoriamente o Nome e o CPF.")
+
+
+# ============================================================================
+# ABA 3: IMPORTAÇÃO EM MASSA DE PLANILHA (MÚLTIPLAS ABAS/SETORES)
+# ============================================================================
+with aba_importacao:
+    st.markdown('<div class="main-header-bar">IMPORTAÇÃO AUTOMÁTICA DE PLANILHAS POR SETOR</div>', unsafe_allow_html=True)
+    st.info("💡 Faça o upload de um arquivo Excel contendo várias abas (cada aba representando um setor, ex: TJ, CEAGESP). O sistema lerá o nome da aba como setor e os cadastros automaticamente.")
+
+    arquivo_upload = st.file_uploader("Escolha o arquivo Excel (.xlsx)", type=["xlsx"])
+
+    if arquivo_upload is not None:
+        try:
+            todas_as_abas = pd.read_excel(arquivo_upload, sheet_name=None)
+            st.success(f"Arquivo carregado com sucesso! Foram encontradas {len(todas_as_abas)} abas (setores).")
+
+            for nome_aba, df_aba in todas_as_abas.items():
+                st.markdown(f"**Setor / Aba: {nome_aba}** ({len(df_aba)} registros encontrados)")
+                st.dataframe(df_aba.head(2))
+
+            if st.button("🚀 Processar e Importar Todas as Abas para o Supabase", use_container_width=True):
+                if conn is not None:
+                    sucessos = 0
+                    erros = 0
+
+                    for nome_aba, df_aba in todas_as_abas.items():
+                        setor_atual = nome_aba.strip()
+
+                        for _, linha in df_aba.iterrows():
+                            try:
+                                nome_colab = str(linha.get("Nome", linha.get("Nome Completo", ""))).strip()
+                                cpf_colab = str(linha.get("CPF", "")).strip()
+
+                                if not nome_colab or nome_colab == "nan" or not cpf_colab or cpf_colab == "nan":
+                                    continue
+
+                                # 1. Insere o colaborador usando o nome da aba como setor automático
+                                conn.table("colaboradores").insert({
+                                    "nome": nome_colab,
+                                    "cpf": cpf_colab,
+                                    "local_trabalho": setor_atual,
+                                    "foto_url": ""
+                                }).execute()
+
+                                # Busca o ID recém gerado
+                                novo_id = conn.table("colaboradores").select("id").eq("cpf", cpf_colab).execute().data[-1]["id"]
+
+                                # 2. Insere os 4 tipos de documentos em branco (sem data e sem link) para preenchimento posterior
+                                for tipo_id in [1, 2, 3, 4]:
+                                    conn.table("compliance_documentos").insert({
+                                        "colaborador_id": novo_id,
+                                        "tipo_documento_id": tipo_id,
+                                        "data_validade": None,
+                                        "arquivo_url": None
+                                    }).execute()
+
+                                sucessos += 1
+                            except Exception:
+                                erros += 1
+
+                    st.success(f"Importação finalizada! {sucessos} cadastros inseridos com sucesso.")
+                    if erros > 0:
+                        st.warning(f"Ocorreram {erros} falhas ou registros ignorados (verifique se há CPFs duplicados ou campos vazios).")
+
+                    st.cache_data.clear()
+                else:
+                    st.error("Conexão com o Supabase indisponível.")
+        except Exception as e:
+            st.error(f"Erro ao processar as planilhas: {e}")
