@@ -248,14 +248,17 @@ def modal_visualizar(conn, colaborador, docs_colab):
     st.markdown("---")
     st.subheader("Documentos e Links de Acesso")
     
-    for _, doc in docs_colab.iterrows():
-        url_arq = doc.get("arquivo_url")
-        if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "":
-            link_html = f" - <a href='{url_arq}' target='_blank'>📎 <b>[Ver Documento na Nuvem]</b></a>"
-        else:
-            link_html = " - <span style='color: #94A3B8;'>Sem link cadastrado</span>"
-            
-        st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{link_html}", unsafe_allow_html=True)
+    if docs_colab.empty:
+        st.info("Nenhum documento cadastrado para este colaborador.")
+    else:
+        for _, doc in docs_colab.iterrows():
+            url_arq = doc.get("arquivo_url")
+            if url_arq and pd.notna(url_arq) and str(url_arq).strip() != "":
+                link_html = f" - <a href='{url_arq}' target='_blank'>📎 <b>[Ver Documento na Nuvem]</b></a>"
+            else:
+                link_html = " - <span style='color: #94A3B8;'>Sem link cadastrado</span>"
+                
+            st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{link_html}", unsafe_allow_html=True)
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -270,6 +273,26 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
+    # Se por acaso o colaborador não tiver registros de documentos, cria os 4 padrões vazios para permitir edição
+    if docs_colab.empty:
+        try:
+            for t_id in [1, 2, 3, 4]:
+                conn.table("compliance_documentos").insert({
+                    "colaborador_id": colaborador["id"],
+                    "tipo_documento_id": t_id,
+                    "data_validade": None,
+                    "arquivo_url": None
+                }).execute()
+            # Recarrega os docs após criar
+            doc_resp = conn.table("compliance_documentos").select("id, colaborador_id, tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colaborador["id"]).execute()
+            tipos_resp = conn.table("tipos_documento").select("id, nome_documento").execute()
+            tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
+            docs_colab = pd.DataFrame(doc_resp.data)
+            if not docs_colab.empty:
+                docs_colab["tipo_documento"] = docs_colab["tipo_documento_id"].map(tipos_dict)
+        except Exception:
+            pass
+
     with st.form(f"form_editar_{colaborador['id']}"):
         novas_datas = {}
         novos_links = {}
@@ -277,21 +300,22 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
         for _, doc in docs_colab.iterrows():
             val_atual = None
             try:
-                if pd.notna(doc["data_validade"]) and str(doc["data_validade"]).strip() not in ["", "None", "NaT"]:
-                    val_atual = dt.datetime.strptime(str(doc["data_validade"])[:10], "%Y-%m-%d").date()
+                val_raw = doc.get("data_validade")
+                if pd.notna(val_raw) and str(val_raw).strip() not in ["", "None", "NaT"]:
+                    val_atual = dt.datetime.strptime(str(val_raw)[:10], "%Y-%m-%d").date()
             except Exception:
                 pass
                 
             link_atual = doc.get("arquivo_url") if pd.notna(doc.get("arquivo_url")) else ""
             
-            st.markdown(f"**{doc['tipo_documento']}**")
+            st.markdown(f"**{doc.get('tipo_documento', 'Documento')}**")
             novas_datas[doc["tipo_documento_id"]] = st.date_input(
-                f"Validade ({doc['tipo_documento']})",
+                f"Validade ({doc.get('tipo_documento', 'Doc')})",
                 value=val_atual,
                 key=f"date_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
             )
             novos_links[doc["tipo_documento_id"]] = st.text_input(
-                f"Link do documento ({doc['tipo_documento']})",
+                f"Link do documento ({doc.get('tipo_documento', 'Doc')})",
                 value=link_atual,
                 key=f"link_edit_{colaborador['id']}_{doc['tipo_documento_id']}",
                 placeholder="Cole o link do Google Drive, SharePoint ou OneDrive aqui..."
@@ -308,7 +332,15 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
                         "data_validade": str(nova_data) if nova_data else None,
                         "arquivo_url": link_informado if link_informado else None
                     }
-                    conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    
+                    # Verifica se o registro já existe para atualizar ou se precisa inserir
+                    existe = conn.table("compliance_documentos").select("id").eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    if existe.data:
+                        conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    else:
+                        dados_update["colaborador_id"] = colaborador["id"]
+                        dados_update["tipo_documento_id"] = tipo_id
+                        conn.table("compliance_documentos").insert(dados_update).execute()
                     
                 st.success("✨ Prazos e links atualizados com sucesso!")
                 st.cache_data.clear()
@@ -559,7 +591,6 @@ with aba_principal:
         lista_setores = ["Todos os Setores"] + sorted(func_df["local_trabalho"].dropna().unique().tolist())
         setor_selecionado = st.selectbox("Filtrar por Setor / Local de Trabalho:", options=lista_setores)
 
-        # Filtra o DataFrame de funcionários com base no setor escolhido
         if setor_selecionado != "Todos os Setores":
             func_filtrado = func_df[func_df["local_trabalho"] == setor_selecionado]
         else:
@@ -585,7 +616,7 @@ with aba_principal:
         for _, colab in func_filtrado.iterrows():
             c_id = colab["id"]
             row_data = {
-                "id": c_id,  # Mantém o id para referência interna
+                "id": c_id,
                 "Nome Completo": colab["nome_completo"],
                 "CPF": str(colab["cpf"]).strip(),
                 "Local de Trabalho": colab["local_trabalho"]
@@ -597,8 +628,6 @@ with aba_principal:
         if lista_linhas:
             tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
             ids_disponiveis = tabela_html_df["id"].tolist()
-            
-            # Remove a coluna id antes de exibir na tabela HTML
             tabela_exibicao = tabela_html_df.drop(columns=["id"])
 
             if "coluna_selecao_id" not in st.session_state or st.session_state["coluna_selecao_id"] not in ids_disponiveis:
@@ -637,7 +666,6 @@ with aba_principal:
 
             st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
 
-            # --- ESTILIZAÇÃO CSS COM CPF CENTRALIZADO E EXPANDIDO ---
             st.markdown(
                 """
                 <style>
@@ -665,7 +693,6 @@ with aba_principal:
                         color: #334155;
                         vertical-align: middle;
                     }
-                    /* Centraliza e impede quebra de linha na coluna do CPF (Segunda coluna) */
                     table.dataframe th:nth-child(2),
                     table.dataframe td:nth-child(2) {
                         text-align: center;
