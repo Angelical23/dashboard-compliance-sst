@@ -240,7 +240,7 @@ else:
 
 
 # ----------------------------------------------------------------------------
-# MODAL 1: VISUALIZAR DETALHES E LINKS (SEM FOTO)
+# MODAL 1: VISUALIZAR DETALHES E LINKS
 # ----------------------------------------------------------------------------
 @st.dialog("👁️ Detalhes e Prontuário do Colaborador")
 def modal_visualizar(conn, colaborador, docs_colab):
@@ -269,7 +269,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS
+# MODAL 2: EDITAR PRAZOS E LINKS (VERSÃO BLINDADA)
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
@@ -340,23 +340,23 @@ def modal_editar_prazos(conn, colaborador):
             try:
                 for tipo_id, nova_data in novas_datas.items():
                     link_informado = novos_links.get(tipo_id, "").strip()
-                    dados_update = {
+                    
+                    dados_payload = {
+                        "colaborador_id": colaborador["id"],
+                        "tipo_documento_id": tipo_id,
                         "data_validade": str(nova_data) if nova_data else None,
                         "arquivo_url": link_informado if link_informado else None
                     }
                     
-                    if tipo_id in docs_existentes:
-                        conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
-                    else:
-                        dados_update["colaborador_id"] = colaborador["id"]
-                        dados_update["tipo_documento_id"] = tipo_id
-                        conn.table("compliance_documentos").insert(dados_update).execute()
+                    # Remove o registro antigo se houver para evitar conflitos e insere o atualizado
+                    conn.table("compliance_documentos").delete().eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
+                    conn.table("compliance_documentos").insert(dados_payload).execute()
                     
                 st.success("✨ Prazos e links atualizados com sucesso!")
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao atualizar: {e}")
+                st.error(f"Erro ao atualizar no Supabase: {e}")
 
 
 # ----------------------------------------------------------------------------
@@ -655,7 +655,6 @@ with aba_principal:
                     label_visibility="collapsed"
                 )
                 
-            # Recupera com precisão o registro exato do colaborador selecionado pelo ID
             colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0] if coluna_selecao else None
 
             with col_btn1:
