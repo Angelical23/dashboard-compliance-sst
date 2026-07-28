@@ -208,21 +208,24 @@ def carregar_dados_supabase(_conn):
         func_df = pd.DataFrame(func_resp.data)
         doc_df = pd.DataFrame(doc_resp.data)
         
-        if func_df.empty or doc_df.empty:
+        if func_df.empty:
             return pd.DataFrame(), pd.DataFrame()
 
-        doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
-        
-        status_grup = []
-        status_det = []
-        
-        for _, r in doc_df.iterrows():
-            g, s = calcular_status_por_data(r["data_validade"])
-            status_grup.append(g)
-            status_det.append(s)
+        if doc_df.empty:
+            doc_df = pd.DataFrame(columns=["id", "colaborador_id", "tipo_documento_id", "data_validade", "arquivo_url", "tipo_documento", "status_grupo", "status_detalhado"])
+        else:
+            doc_df["tipo_documento"] = doc_df["tipo_documento_id"].map(tipos_dict)
             
-        doc_df["status_grupo"] = status_grup
-        doc_df["status_detalhado"] = status_det
+            status_grup = []
+            status_det = []
+            
+            for _, r in doc_df.iterrows():
+                g, s = calcular_status_por_data(r["data_validade"])
+                status_grup.append(g)
+                status_det.append(s)
+                
+            doc_df["status_grupo"] = status_grup
+            doc_df["status_detalhado"] = status_det
         
         return func_df, doc_df
     except Exception:
@@ -258,7 +261,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
             else:
                 link_html = " - <span style='color: #94A3B8;'>Sem link cadastrado</span>"
                 
-            st.markdown(f"• **{doc['tipo_documento']}**: {doc['status_detalhado']}{link_html}", unsafe_allow_html=True)
+            st.markdown(f"• **{doc.get('tipo_documento', 'Documento')}**: {doc.get('status_detalhado', '⚠️ Falta Cadastrar')}{link_html}", unsafe_allow_html=True)
     
     st.write("")
     if st.button("Fechar Prontuário", use_container_width=True):
@@ -266,58 +269,69 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS
+# MODAL 2: EDITAR PRAZOS E LINKS (ROBUSTO CONTRA DADOS FALTANTES)
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
-def modal_editar_prazos(conn, colaborador, docs_colab):
+def modal_editar_prazos(conn, colaborador):
     st.write(f"Editando documentos de: **{colaborador['nome_completo']}**")
     st.markdown("---")
     
-    # Se por acaso o colaborador não tiver registros de documentos, cria os 4 padrões vazios para permitir edição
-    if docs_colab.empty:
-        try:
-            for t_id in [1, 2, 3, 4]:
-                conn.table("compliance_documentos").insert({
-                    "colaborador_id": colaborador["id"],
-                    "tipo_documento_id": t_id,
-                    "data_validade": None,
-                    "arquivo_url": None
-                }).execute()
-            # Recarrega os docs após criar
-            doc_resp = conn.table("compliance_documentos").select("id, colaborador_id, tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colaborador["id"]).execute()
-            tipos_resp = conn.table("tipos_documento").select("id, nome_documento").execute()
-            tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
-            docs_colab = pd.DataFrame(doc_resp.data)
-            if not docs_colab.empty:
-                docs_colab["tipo_documento"] = docs_colab["tipo_documento_id"].map(tipos_dict)
-        except Exception:
-            pass
+    # Busca os tipos de documentos cadastrados na tabela tipos_documento
+    try:
+        tipos_resp = conn.table("tipos_documento").select("id, nome_documento").execute()
+        tipos_lista = tipos_resp.data if tipos_resp.data else [
+            {"id": 1, "nome_documento": "Ficha Admissão"},
+            {"id": 2, "nome_documento": "ASO"},
+            {"id": 3, "nome_documento": "Ficha de EPI"},
+            {"id": 4, "nome_documento": "Certificado NR06"}
+        ]
+    except Exception:
+        tipos_lista = [
+            {"id": 1, "nome_documento": "Ficha Admissão"},
+            {"id": 2, "nome_documento": "ASO"},
+            {"id": 3, "nome_documento": "Ficha de EPI"},
+            {"id": 4, "nome_documento": "Certificado NR06"}
+        ]
+
+    # Busca os documentos existentes no banco para este colaborador
+    docs_existentes = {}
+    try:
+        doc_resp = conn.table("compliance_documentos").select("tipo_documento_id, data_validade, arquivo_url").eq("colaborador_id", colaborador["id"]).execute()
+        if doc_resp.data:
+            for d in doc_resp.data:
+                docs_existentes[d["tipo_documento_id"]] = d
+    except Exception:
+        pass
 
     with st.form(f"form_editar_{colaborador['id']}"):
         novas_datas = {}
         novos_links = {}
         
-        for _, doc in docs_colab.iterrows():
+        for tipo in tipos_lista:
+            t_id = tipo["id"]
+            t_nome = tipo["nome_documento"]
+            
+            doc_info = docs_existentes.get(t_id, {})
             val_atual = None
             try:
-                val_raw = doc.get("data_validade")
+                val_raw = doc_info.get("data_validade")
                 if pd.notna(val_raw) and str(val_raw).strip() not in ["", "None", "NaT"]:
                     val_atual = dt.datetime.strptime(str(val_raw)[:10], "%Y-%m-%d").date()
             except Exception:
                 pass
                 
-            link_atual = doc.get("arquivo_url") if pd.notna(doc.get("arquivo_url")) else ""
+            link_atual = doc_info.get("arquivo_url") if pd.notna(doc_info.get("arquivo_url")) else ""
             
-            st.markdown(f"**{doc.get('tipo_documento', 'Documento')}**")
-            novas_datas[doc["tipo_documento_id"]] = st.date_input(
-                f"Validade ({doc.get('tipo_documento', 'Doc')})",
+            st.markdown(f"**{t_nome}**")
+            novas_datas[t_id] = st.date_input(
+                f"Validade ({t_nome})",
                 value=val_atual,
-                key=f"date_edit_{colaborador['id']}_{doc['tipo_documento_id']}"
+                key=f"date_edit_{colaborador['id']}_{t_id}"
             )
-            novos_links[doc["tipo_documento_id"]] = st.text_input(
-                f"Link do documento ({doc.get('tipo_documento', 'Doc')})",
+            novos_links[t_id] = st.text_input(
+                f"Link do documento ({t_nome})",
                 value=link_atual,
-                key=f"link_edit_{colaborador['id']}_{doc['tipo_documento_id']}",
+                key=f"link_edit_{colaborador['id']}_{t_id}",
                 placeholder="Cole o link do Google Drive, SharePoint ou OneDrive aqui..."
             )
             st.markdown("---")
@@ -333,9 +347,7 @@ def modal_editar_prazos(conn, colaborador, docs_colab):
                         "arquivo_url": link_informado if link_informado else None
                     }
                     
-                    # Verifica se o registro já existe para atualizar ou se precisa inserir
-                    existe = conn.table("compliance_documentos").select("id").eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
-                    if existe.data:
+                    if tipo_id in docs_existentes:
                         conn.table("compliance_documentos").update(dados_update).eq("colaborador_id", colaborador["id"]).eq("tipo_documento_id", tipo_id).execute()
                     else:
                         dados_update["colaborador_id"] = colaborador["id"]
@@ -586,7 +598,7 @@ with aba_principal:
 
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
-    if not doc_df.empty and not func_df.empty:
+    if not func_df.empty:
         # --- FILTRO POR SETOR ---
         lista_setores = ["Todos os Setores"] + sorted(func_df["local_trabalho"].dropna().unique().tolist())
         setor_selecionado = st.selectbox("Filtrar por Setor / Local de Trabalho:", options=lista_setores)
@@ -597,20 +609,21 @@ with aba_principal:
             func_filtrado = func_df
 
         mapa_status = {}
-        for _, r in doc_df.iterrows():
-            c_id = r["colaborador_id"]
-            t_doc = r["tipo_documento"]
-            g, s = calcular_status_por_data(r["data_validade"])
-            
-            url = r.get("arquivo_url")
-            if url and pd.notna(url) and str(url).strip() != "":
-                s_final = f"{s} <a href='{url}' target='_blank' style='text-decoration:none; margin-left: 5px;' title='Ver Documento'>📎</a>"
-            else:
-                s_final = s
+        if not doc_df.empty:
+            for _, r in doc_df.iterrows():
+                c_id = r["colaborador_id"]
+                t_doc = r["tipo_documento"]
+                g, s = calcular_status_por_data(r["data_validade"])
                 
-            if c_id not in mapa_status:
-                mapa_status[c_id] = {}
-            mapa_status[c_id][t_doc] = s_final
+                url = r.get("arquivo_url")
+                if url and pd.notna(url) and str(url).strip() != "":
+                    s_final = f"{s} <a href='{url}' target='_blank' style='text-decoration:none; margin-left: 5px;' title='Ver Documento'>📎</a>"
+                else:
+                    s_final = s
+                    
+                if c_id not in mapa_status:
+                    mapa_status[c_id] = {}
+                mapa_status[c_id][t_doc] = s_final
 
         lista_linhas = []
         for _, colab in func_filtrado.iterrows():
@@ -648,15 +661,14 @@ with aba_principal:
                 if st.button("👁️ Visualizar", use_container_width=True):
                     if coluna_selecao:
                         colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
+                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao] if not doc_df.empty else pd.DataFrame()
                         modal_visualizar(conn, colaborador_sel, docs_sel)
                         
             with col_btn2:
                 if st.button("✏️ Editar Prazos e Links", use_container_width=True):
                     if coluna_selecao:
                         colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
-                        modal_editar_prazos(conn, colaborador_sel, docs_sel)
+                        modal_editar_prazos(conn, colaborador_sel)
                         
             with col_del_btn:
                 if st.button("⚙️ Excluir", use_container_width=True):
