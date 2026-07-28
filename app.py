@@ -211,6 +211,27 @@ def carregar_dados_supabase(_conn):
         if func_df.empty:
             return pd.DataFrame(), pd.DataFrame()
 
+        # Garante que todo colaborador tenha registros de documentos criados automaticamente
+        for _, colab in func_df.iterrows():
+            c_id = int(colab["id"])
+            for t_id in [1, 2, 3, 4]:
+                if doc_df.empty or not ((doc_df["colaborador_id"].astype(int) == c_id) & (doc_df["tipo_documento_id"].astype(int) == t_id)).any():
+                    try:
+                        _conn.table("compliance_documentos").insert({
+                            "colaborador_id": c_id,
+                            "tipo_documento_id": t_id,
+                            "data_validade": None,
+                            "arquivo_url": None
+                        }).execute()
+                    except Exception:
+                        pass
+
+        # Recarrega os documentos após assegurar a criação
+        doc_resp = _conn.table("compliance_documentos").select(
+            "id, colaborador_id, tipo_documento_id, data_validade, arquivo_url"
+        ).execute()
+        doc_df = pd.DataFrame(doc_resp.data)
+
         if doc_df.empty:
             doc_df = pd.DataFrame(columns=["id", "colaborador_id", "tipo_documento_id", "data_validade", "arquivo_url", "tipo_documento", "status_grupo", "status_detalhado"])
         else:
@@ -269,7 +290,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS (GARANTINDO CRIAÇÃO DOS 4 DOCUMENTOS)
+# MODAL 2: EDITAR PRAZOS E LINKS
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
@@ -434,7 +455,6 @@ with aba_principal:
         colaboradores_em_dia = 0
         for cid in ids_com_cadastros:
             docs_c = doc_df[doc_df["colaborador_id"].astype(int) == int(cid)] if not doc_df.empty else pd.DataFrame()
-            # Precisa ter exatamente os 4 tipos preenchidos e todos com status Regular
             if len(docs_c) == 4 and all(docs_c["status_grupo"] == "Regular"):
                 colaboradores_em_dia += 1
     else:
