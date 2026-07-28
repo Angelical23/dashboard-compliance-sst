@@ -555,6 +555,16 @@ with aba_principal:
     st.markdown('<div class="section-title">VISÃO GERAL DE DOCUMENTAÇÃO POR COLABORADOR (PRAZOS E ANEXOS)</div>', unsafe_allow_html=True)
 
     if not doc_df.empty and not func_df.empty:
+        # --- FILTRO POR SETOR ---
+        lista_setores = ["Todos os Setores"] + sorted(func_df["local_trabalho"].dropna().unique().tolist())
+        setor_selecionado = st.selectbox("Filtrar por Setor / Local de Trabalho:", options=lista_setores)
+
+        # Filtra o DataFrame de funcionários com base no setor escolhido
+        if setor_selecionado != "Todos os Setores":
+            func_filtrado = func_df[func_df["local_trabalho"] == setor_selecionado]
+        else:
+            func_filtrado = func_df
+
         mapa_status = {}
         for _, r in doc_df.iterrows():
             c_id = r["colaborador_id"]
@@ -572,103 +582,109 @@ with aba_principal:
             mapa_status[c_id][t_doc] = s_final
 
         lista_linhas = []
-        for _, colab in func_df.iterrows():
+        for _, colab in func_filtrado.iterrows():
             c_id = colab["id"]
             row_data = {
+                "id": c_id,  # Mantém o id para referência interna
                 "Nome Completo": colab["nome_completo"],
-                "CPF": str(colab["cpf"]).strip(),  # Garante string completa para o CPF
+                "CPF": str(colab["cpf"]).strip(),
                 "Local de Trabalho": colab["local_trabalho"]
             }
             for tipo in TIPOS_DOCUMENTO:
                 row_data[tipo] = mapa_status.get(c_id, {}).get(tipo, "⚠️ Falta Cadastrar")
             lista_linhas.append(row_data)
 
-        tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
-
-        # --- CONTROLE DE ESTADO DO SELECTBOX PARA EVITAR ERRO APÓS EXCLUSÃO ---
-        ids_disponiveis = func_df["id"].tolist()
-        if "coluna_selecao_id" not in st.session_state or st.session_state["coluna_selecao_id"] not in ids_disponiveis:
-            st.session_state["coluna_selecao_id"] = ids_disponiveis[0] if ids_disponiveis else None
-
-        col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
-        
-        with col_sel:
-            coluna_selecao = st.selectbox(
-                "Selecione um colaborador:",
-                options=ids_disponiveis,
-                format_func=lambda x: func_df.loc[func_df["id"] == x, "nome_completo"].values[0] if not func_df.loc[func_df["id"] == x].empty else "",
-                key="coluna_selecao_id",
-                label_visibility="collapsed"
-            )
+        if lista_linhas:
+            tabela_html_df = pd.DataFrame(lista_linhas).sort_values("Nome Completo")
+            ids_disponiveis = tabela_html_df["id"].tolist()
             
-        with col_btn1:
-            if st.button("👁️ Visualizar", use_container_width=True):
-                if coluna_selecao:
-                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                    docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
-                    modal_visualizar(conn, colaborador_sel, docs_sel)
-                    
-        with col_btn2:
-            if st.button("✏️ Editar Prazos e Links", use_container_width=True):
-                if coluna_selecao:
-                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                    docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
-                    modal_editar_prazos(conn, colaborador_sel, docs_sel)
-                    
-        with col_del_btn:
-            if st.button("⚙️ Excluir", use_container_width=True):
-                if coluna_selecao:
-                    colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
-                    modal_gerenciar_colaborador(conn, colaborador_sel)
+            # Remove a coluna id antes de exibir na tabela HTML
+            tabela_exibicao = tabela_html_df.drop(columns=["id"])
 
-        st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
+            if "coluna_selecao_id" not in st.session_state or st.session_state["coluna_selecao_id"] not in ids_disponiveis:
+                st.session_state["coluna_selecao_id"] = ids_disponiveis[0] if ids_disponiveis else None
 
-        # --- ESTILIZAÇÃO CSS COM CPF CENTRALIZADO E EXPANDIDO ---
-        st.markdown(
-            """
-            <style>
-                table.dataframe {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-family: sans-serif;
-                    font-size: 14px;
-                    background-color: #FFFFFF;
-                    border: 1px solid #E2E8F0;
-                    border-radius: 8px;
-                    overflow: hidden;
-                }
-                table.dataframe th {
-                    background-color: #F8FAFC;
-                    color: #0F172A;
-                    text-align: left;
-                    padding: 12px 16px;
-                    border-bottom: 2px solid #E2E8F0;
-                    font-weight: 700;
-                }
-                table.dataframe td {
-                    padding: 12px 16px;
-                    border-bottom: 1px solid #E2E8F0;
-                    color: #334155;
-                    vertical-align: middle;
-                }
-                /* Centraliza e impede quebra de linha na coluna do CPF (Segunda coluna) */
-                table.dataframe th:nth-child(2),
-                table.dataframe td:nth-child(2) {
-                    text-align: center;
-                    white-space: nowrap;
-                }
-                table.dataframe tr:hover {
-                    background-color: #F1F5F9;
-                }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+            col_sel, col_btn1, col_btn2, col_del_btn = st.columns([5, 2, 2, 2])
+            
+            with col_sel:
+                coluna_selecao = st.selectbox(
+                    "Selecione um colaborador:",
+                    options=ids_disponiveis,
+                    format_func=lambda x: tabela_html_df.loc[tabela_html_df["id"] == x, "Nome Completo"].values[0] if not tabela_html_df.loc[tabela_html_df["id"] == x].empty else "",
+                    key="coluna_selecao_id",
+                    label_visibility="collapsed"
+                )
+                
+            with col_btn1:
+                if st.button("👁️ Visualizar", use_container_width=True):
+                    if coluna_selecao:
+                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
+                        modal_visualizar(conn, colaborador_sel, docs_sel)
+                        
+            with col_btn2:
+                if st.button("✏️ Editar Prazos e Links", use_container_width=True):
+                    if coluna_selecao:
+                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                        docs_sel = doc_df[doc_df["colaborador_id"] == coluna_selecao]
+                        modal_editar_prazos(conn, colaborador_sel, docs_sel)
+                        
+            with col_del_btn:
+                if st.button("⚙️ Excluir", use_container_width=True):
+                    if coluna_selecao:
+                        colaborador_sel = func_df[func_df["id"] == coluna_selecao].iloc[0]
+                        modal_gerenciar_colaborador(conn, colaborador_sel)
 
-        st.markdown(
-            tabela_html_df.to_html(escape=False, index=False, classes="dataframe"),
-            unsafe_allow_html=True
-        )
+            st.markdown("<div style='font-size: 13px; color: #64748B; margin-bottom: 5px;'>💡 Dica: O símbolo <b>📎</b> ao lado da data na tabela já serve como link direto para abrir o documento em nova aba!</div>", unsafe_allow_html=True)
+
+            # --- ESTILIZAÇÃO CSS COM CPF CENTRALIZADO E EXPANDIDO ---
+            st.markdown(
+                """
+                <style>
+                    table.dataframe {
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-family: sans-serif;
+                        font-size: 14px;
+                        background-color: #FFFFFF;
+                        border: 1px solid #E2E8F0;
+                        border-radius: 8px;
+                        overflow: hidden;
+                    }
+                    table.dataframe th {
+                        background-color: #F8FAFC;
+                        color: #0F172A;
+                        text-align: left;
+                        padding: 12px 16px;
+                        border-bottom: 2px solid #E2E8F0;
+                        font-weight: 700;
+                    }
+                    table.dataframe td {
+                        padding: 12px 16px;
+                        border-bottom: 1px solid #E2E8F0;
+                        color: #334155;
+                        vertical-align: middle;
+                    }
+                    /* Centraliza e impede quebra de linha na coluna do CPF (Segunda coluna) */
+                    table.dataframe th:nth-child(2),
+                    table.dataframe td:nth-child(2) {
+                        text-align: center;
+                        white-space: nowrap;
+                    }
+                    table.dataframe tr:hover {
+                        background-color: #F1F5F9;
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+
+            st.markdown(
+                tabela_exibicao.to_html(escape=False, index=False, classes="dataframe"),
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("ℹ️ Nenhum colaborador encontrado para o setor selecionado.")
     else:
         st.warning("⚠️ Nenhum registro encontrado.")
 
