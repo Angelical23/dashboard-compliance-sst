@@ -832,4 +832,53 @@ with aba_importacao:
             todas_as_abas = pd.read_excel(arquivo_upload, sheet_name=None)
             st.success(f"Arquivo carregado com sucesso! Foram encontradas {len(todas_as_abas)} abas (setores).")
 
-name_aba, df_aba = None, None # Evita erro de escopo se necessário
+            for nome_aba, df_aba in todas_as_abas.items():
+                st.markdown(f"**Setor / Aba: {nome_aba}** ({len(df_aba)} registros encontrados)")
+                st.dataframe(df_aba.head(2))
+
+            if st.button("🚀 Processar e Importar Todas as Abas para o Supabase", use_container_width=True):
+                if conn is not None:
+                    sucessos = 0
+                    erros = 0
+
+                    for nome_aba, df_aba in todas_as_abas.items():
+                        setor_atual = nome_aba.strip()
+
+                        for _, linha in df_aba.iterrows():
+                            try:
+                                nome_colab = str(linha.get("Nome", linha.get("Nome Completo", ""))).strip()
+                                cpf_colab = str(linha.get("CPF", "")).strip()
+
+                                if not nome_colab or nome_colab == "nan" or not cpf_colab or cpf_colab == "nan":
+                                    continue
+
+                                conn.table("colaboradores").insert({
+                                    "nome_completo": nome_colab,
+                                    "cpf": cpf_colab,
+                                    "local_trabalho": setor_atual,
+                                    "foto_url": ""
+                                }).execute()
+
+                                novo_id = int(conn.table("colaboradores").select("id").eq("cpf", cpf_colab).execute().data[-1]["id"])
+
+                                for tipo_id in [1, 2, 3, 4]:
+                                    conn.table("compliance_documentos").insert({
+                                        "colaborador_id": novo_id,
+                                        "tipo_documento_id": int(tipo_id),
+                                        "data_validade": None,
+                                        "arquivo_url": None
+                                    }).execute()
+
+                                sucessos += 1
+                            except Exception:
+                                erros += 1
+
+                    st.success(f"Importação finalizada! {sucessos} cadastros inseridos com sucesso.")
+                    if erros > 0:
+                        st.warning(f"Ocorreram {erros} falhas ou registros ignorados (verifique se há CPFs duplicados ou campos vazios).")
+
+                    st.cache_data.clear()
+                else:
+                    st.error("Conexão com o Supabase indisponível.")
+        except Exception as e:
+            st.error(f"Erro ao processar as planilhas: {e}")
