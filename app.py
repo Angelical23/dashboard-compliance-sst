@@ -194,19 +194,32 @@ def calcular_status_por_data(data_val):
 @st.cache_data(show_spinner=False, ttl=10)
 def carregar_dados_supabase(_conn):
     try:
+        # Busca colaboradores sem limite de paginação
         func_resp = _conn.table("colaboradores").select(
             "id, nome_completo, cpf, foto_url, local_trabalho"
-        ).execute()
+        ).range(0, 9999).execute()
         
         tipos_resp = _conn.table("tipos_documento").select("id, nome_documento").execute()
         tipos_dict = {t["id"]: t["nome_documento"] for t in tipos_resp.data}
 
-        doc_resp = _conn.table("compliance_documentos").select(
-            "id, colaborador_id, tipo_documento_id, data_validade, arquivo_url"
-        ).execute()
+        # Busca documentos paginando em blocos para garantir que traga todos os 2208+ registros
+        all_docs = []
+        batch_size = 1000
+        start = 0
+        while True:
+            doc_resp = _conn.table("compliance_documentos").select(
+                "id, colaborador_id, tipo_documento_id, data_validade, arquivo_url"
+            ).range(start, start + batch_size - 1).execute()
+            
+            if not doc_resp.data:
+                break
+            all_docs.extend(doc_resp.data)
+            if len(doc_resp.data) < batch_size:
+                break
+            start += batch_size
 
         func_df = pd.DataFrame(func_resp.data)
-        doc_df = pd.DataFrame(doc_resp.data)
+        doc_df = pd.DataFrame(all_docs)
         
         if func_df.empty:
             return pd.DataFrame(), pd.DataFrame()
@@ -269,7 +282,7 @@ def modal_visualizar(conn, colaborador, docs_colab):
 
 
 # ----------------------------------------------------------------------------
-# MODAL 2: EDITAR PRAZOS E LINKS (LEVE E SEGURO)
+# MODAL 2: EDITAR PRAZOS E LINKS
 # ----------------------------------------------------------------------------
 @st.dialog("✏️ Atualizar Prazos e Links de Documentos")
 def modal_editar_prazos(conn, colaborador):
@@ -429,13 +442,11 @@ with aba_principal:
     total_funcionarios = func_df["id"].nunique() if not func_df.empty else 0
     total_documentos = len(doc_df)
 
-    if not func_df.empty:
-        ids_com_cadastros = func_df["id"].unique()
-        colaboradores_em_dia = 0
-        for cid in ids_com_cadastros:
-            docs_c = doc_df[doc_df["colaborador_id"].astype(int) == int(cid)] if not doc_df.empty else pd.DataFrame()
-            if len(docs_c) == 4 and all(docs_c["status_grupo"] == "Regular"):
-                colaboradores_em_dia += 1
+    if not func_df.empty and not doc_df.empty:
+        # Conta quantos colaboradores possuem todos os documentos cadastrados e regulares
+        docs_validos = doc_df[doc_df["status_grupo"] == "Regular"]
+        contagem_por_colab = docs_validos.groupby("colaborador_id").size()
+        colaboradores_em_dia = int((contagem_por_colab >= 4).sum())
     else:
         colaboradores_em_dia = 0
 
@@ -873,7 +884,7 @@ with aba_importacao:
                             except Exception:
                                 erros += 1
 
-                    st.success(f"Importação finalizada! {sucessos} cadastros inseridos com sucesso.")
+                    st.success(f"Importação finalizada! {sucessos} sucessos inseridos com sucesso.")
                     if erros > 0:
                         st.warning(f"Ocorreram {erros} falhas ou registros ignorados (verifique se há CPFs duplicados ou campos vazios).")
 
